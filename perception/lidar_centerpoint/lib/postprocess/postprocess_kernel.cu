@@ -32,10 +32,34 @@ struct is_score_greater
 {
   is_score_greater(float t) : t_(t) {}
 
-  __device__ bool operator()(const Box3D & b) { return b.score > t_; }
+  __device__ bool operator()(const Box3D & b) {
+    //if (iteration_debug_++ < 10) {
+    //  printf("is_score_greater iteration %d, box.score=%.2f threshold=%.2f\n", iteration_debug_, b.score, t_);
+    //}
+     
+    return b.score > t_; 
+    }
 
 private:
   float t_{0.0};
+  int iteration_debug_{0};
+};
+
+struct is_score_greater_cpu
+{
+  is_score_greater_cpu(float t) : t_(t) {}
+
+  __host__ bool operator()(const Box3D & b) {
+    //if (iteration_debug_++ < 10) {
+    //  printf("is_score_greater iteration %d, box.score=%.2f threshold=%.2f\n", iteration_debug_, b.score, t_);
+    //}
+     
+    return b.score > t_; 
+    }
+
+private:
+  float t_{0.0};
+  int iteration_debug_{0};
 };
 
 struct is_kept
@@ -120,6 +144,48 @@ cudaError_t PostProcessCUDA::generateDetectedBoxes3D_launch(
   const float * out_rot, const float * out_vel, std::vector<Box3D> & det_boxes3d,
   cudaStream_t stream)
 {
+  uintptr_t out_heatmap_alignment = ((uintptr_t)(const void *)(out_heatmap)) % sizeof(float);
+  uintptr_t out_offset_alignment = ((uintptr_t)(const void *)(out_offset)) % sizeof(float);
+  uintptr_t out_z_alignment = ((uintptr_t)(const void *)(out_z)) % sizeof(float);
+  uintptr_t out_dim_alignment = ((uintptr_t)(const void *)(out_dim)) % sizeof(float);
+  uintptr_t out_rot_alignment = ((uintptr_t)(const void *)(out_rot)) % sizeof(float);
+  uintptr_t out_vel_alignment = ((uintptr_t)(const void *)(out_vel)) % sizeof(float);
+  uintptr_t yaw_norm_thresholds_d_alignment = ((uintptr_t)(const void *)(thrust::raw_pointer_cast(boxes3d_d_.data()))) % sizeof(float);
+  uintptr_t boxes3d_d_alignment = ((uintptr_t)(const void *)(thrust::raw_pointer_cast(boxes3d_d_.data()))) % sizeof(centerpoint::Box3D);
+  uintptr_t boxes3d_d_alignment512 = ((uintptr_t)(const void *)(thrust::raw_pointer_cast(boxes3d_d_.data()))) % (16*sizeof(float));
+
+  printf("out_heatmap_alignment: %lu\n", out_heatmap_alignment);
+  printf("out_offset_alignment: %lu\n", out_offset_alignment);
+  printf("out_z_alignment: %lu\n", out_z_alignment);
+  printf("out_dim_alignment: %lu\n", out_dim_alignment);
+  printf("out_rot_alignment: %lu\n", out_rot_alignment);
+  printf("out_vel_alignment: %lu\n", out_vel_alignment);
+  printf("yaw_norm_thresholds_d_alignment: %lu\n", yaw_norm_thresholds_d_alignment);
+  printf("boxes3d_d_alignment: %lu size=%lu\n", boxes3d_d_alignment, sizeof(centerpoint::Box3D));
+  printf("boxes3d_d_alignment512: %lu size=%lu\n", boxes3d_d_alignment512, sizeof(centerpoint::Box3D));
+
+  int min_label = 100;
+  float min_score = 1e10;
+  float min_x = 1e10;
+  float min_y = 1e10;
+  float min_z = 1e10;
+  float min_length = 1e10;
+  float min_width = 1e10;
+  float min_height = 1e10;
+  float min_vx = 1e10;
+  float min_vy = 1e10;
+
+  int max_label = -100;
+  float max_score = -1e10;
+  float max_x = -1e10;
+  float max_y = -1e10;
+  float max_z = -1e10;
+  float max_length = -1e10;
+  float max_width = -1e10;
+  float max_height = -1e10;
+  float max_vx = -1e10;
+  float max_vy = -1e10;
+ 
   dim3 blocks(
     divup(config_.down_grid_size_y_, THREADS_PER_BLOCK),
     divup(config_.down_grid_size_x_, THREADS_PER_BLOCK));
@@ -131,10 +197,66 @@ cudaError_t PostProcessCUDA::generateDetectedBoxes3D_launch(
     thrust::raw_pointer_cast(yaw_norm_thresholds_d_.data()),
     thrust::raw_pointer_cast(boxes3d_d_.data()));
 
+  cudaDeviceSynchronize();
+
+  thrust::host_vector<centerpoint::Box3D> host_vec = boxes3d_d_;
+  centerpoint::Box3D* bbox_ptr = thrust::raw_pointer_cast(host_vec.data());
+  for(unsigned long i = 0; i < boxes3d_d_.size(); i++) {
+
+    min_label = (min_label < bbox_ptr[i].label) ? min_label : bbox_ptr[i].label;
+    min_score = (min_score < bbox_ptr[i].score) ? min_score : bbox_ptr[i].score;
+    min_x = (min_x < bbox_ptr[i].x) ? min_x : bbox_ptr[i].x;
+    min_y = (min_y < bbox_ptr[i].y) ? min_y : bbox_ptr[i].y;
+    min_z = (min_z < bbox_ptr[i].z) ? min_z : bbox_ptr[i].z;
+    min_length = (min_length < bbox_ptr[i].length) ? min_length : bbox_ptr[i].length;
+    min_width = (min_width < bbox_ptr[i].width) ? min_width : bbox_ptr[i].width;
+    min_height = (min_height < bbox_ptr[i].height) ? min_height : bbox_ptr[i].height;
+    min_vx = (min_vx < bbox_ptr[i].vel_x) ? min_vx : bbox_ptr[i].vel_x;
+    min_vy = (min_vy < bbox_ptr[i].vel_y) ? min_vy : bbox_ptr[i].vel_y;
+
+    max_label = (max_label > bbox_ptr[i].label) ? max_label : bbox_ptr[i].label;
+    max_score = (max_score > bbox_ptr[i].score) ? max_score : bbox_ptr[i].score;
+    max_x = (max_x > bbox_ptr[i].x) ? max_x : bbox_ptr[i].x;
+    max_y = (max_y > bbox_ptr[i].y) ? max_y : bbox_ptr[i].y;
+    max_z = (max_z > bbox_ptr[i].z) ? max_z : bbox_ptr[i].z;
+    max_length = (max_length > bbox_ptr[i].length) ? max_length : bbox_ptr[i].length;
+    max_width = (max_width > bbox_ptr[i].width) ? max_width : bbox_ptr[i].width;
+    max_height = (min_height > bbox_ptr[i].height) ? max_height : bbox_ptr[i].height;
+    max_vx = (max_vx > bbox_ptr[i].vel_x) ? max_vx : bbox_ptr[i].vel_x;
+    max_vy = (max_vy > bbox_ptr[i].vel_y) ? max_vy : bbox_ptr[i].vel_y;
+  }
+
+  printf("label min=%d \t max=%d\n", min_label, max_label);
+  printf("score min=%.2f \t max=%.2f\n", min_score, max_score);
+
+  printf("x min=%.2f \t max=%.2f\n", min_x, max_x);
+  printf("y min=%.2f \t max=%.2f\n", min_y, max_y);
+  printf("z min=%.2f \t max=%.2f\n", min_z, max_z);
+
+  printf("length min=%.2f \t max=%.2f\n", min_length, max_length);
+  printf("width min=%.2f \t max=%.2f\n", min_width, max_width);
+  printf("height min=%.2f \t max=%.2f\n", min_height, max_height);
+
+  printf("vx min=%.2f \t max=%.2f\n", min_vx, max_vx);
+  printf("vy min=%.2f \t max=%.2f\n", min_vy, max_vy);
+
+  // suppress by score (CPU)
+  const auto num_det_boxes3d_cpu = thrust::count_if(
+    thrust::host, host_vec.begin(), host_vec.end(),
+    is_score_greater_cpu(config_.score_threshold_));
+
+  printf("Num boxes over thresh (CPU)=%lu\n", num_det_boxes3d_cpu);
+
+
   // suppress by score
   const auto num_det_boxes3d = thrust::count_if(
     thrust::device, boxes3d_d_.begin(), boxes3d_d_.end(),
     is_score_greater(config_.score_threshold_));
+
+  printf("Num boxes over thresh (GPU)=%lu\n", num_det_boxes3d);
+
+  cudaDeviceSynchronize();
+
   if (num_det_boxes3d == 0) {
     return cudaGetLastError();
   }
