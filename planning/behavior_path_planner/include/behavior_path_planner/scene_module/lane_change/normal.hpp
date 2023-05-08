@@ -35,23 +35,23 @@ using tier4_planning_msgs::msg::LaneChangeDebugMsgArray;
 class NormalLaneChange : public LaneChangeBase
 {
 public:
-  NormalLaneChange(const std::shared_ptr<LaneChangeParameters> & parameters, Direction direction);
+  NormalLaneChange(
+    const std::shared_ptr<LaneChangeParameters> & parameters, LaneChangeModuleType type,
+    Direction direction);
 
+  NormalLaneChange(const NormalLaneChange &) = delete;
+  NormalLaneChange(NormalLaneChange &&) = delete;
+  NormalLaneChange & operator=(const NormalLaneChange &) = delete;
+  NormalLaneChange & operator=(NormalLaneChange &&) = delete;
   ~NormalLaneChange() override = default;
 
-  void updateLaneChangeStatus(
-    const PathWithLaneId & prev_module_reference_path,
-    const PathWithLaneId & previous_module_path) override;
+  void updateLaneChangeStatus() override;
 
-  std::pair<bool, bool> getSafePath(
-    const PathWithLaneId & prev_module_reference_path, const PathWithLaneId & prev_module_path,
-    LaneChangePath & safe_path) const override;
+  std::pair<bool, bool> getSafePath(LaneChangePath & safe_path) const override;
 
-  PathWithLaneId generatePlannedPath(
-    const std::vector<DrivableLanes> & prev_drivable_lanes) override;
+  BehaviorModuleOutput generateOutput() override;
 
-  void generateExtendedDrivableArea(
-    const std::vector<DrivableLanes> & prev_drivable_lanes, PathWithLaneId & path) override;
+  void extendOutputDrivableArea(BehaviorModuleOutput & output) override;
 
   bool hasFinishedLaneChange() const override;
 
@@ -66,14 +66,58 @@ public:
   TurnSignalInfo updateOutputTurnSignal() override;
 
 protected:
+  lanelet::ConstLanelets getCurrentLanes() const override;
+
   lanelet::ConstLanelets getLaneChangeLanes(
-    const lanelet::ConstLanelets & current_lanes) const override;
+    const lanelet::ConstLanelets & current_lanes, Direction direction) const override;
+
+  int getNumToPreferredLane(const lanelet::ConstLanelet & lane) const override;
+
+  PathWithLaneId getPrepareSegment(
+    const lanelet::ConstLanelets & current_lanes, const double arc_length_from_current,
+    const double backward_path_length, const double prepare_length,
+    const double prepare_velocity) const override;
+
+  bool getLaneChangePaths(
+    const lanelet::ConstLanelets & original_lanelets,
+    const lanelet::ConstLanelets & target_lanelets, Direction direction,
+    LaneChangePaths * candidate_paths) const override;
+
+  std::vector<DrivableLanes> getDrivableLanes() const override;
 
   bool isApprovedPathSafe(Pose & ego_pose_before_collision) const override;
 
   void calcTurnSignalInfo() override;
 
   bool isValidPath(const PathWithLaneId & path) const override;
+};
+
+class NormalLaneChangeBT : public NormalLaneChange
+{
+public:
+  NormalLaneChangeBT(
+    const std::shared_ptr<LaneChangeParameters> & parameters, LaneChangeModuleType type,
+    Direction direction);
+
+  NormalLaneChangeBT(const NormalLaneChangeBT &) = delete;
+  NormalLaneChangeBT(NormalLaneChangeBT &&) = delete;
+  NormalLaneChangeBT & operator=(const NormalLaneChangeBT &) = delete;
+  NormalLaneChangeBT & operator=(NormalLaneChangeBT &&) = delete;
+  ~NormalLaneChangeBT() override = default;
+
+  PathWithLaneId getReferencePath() const override;
+
+protected:
+  lanelet::ConstLanelets getCurrentLanes() const override;
+
+  int getNumToPreferredLane(const lanelet::ConstLanelet & lane) const override;
+
+  PathWithLaneId getPrepareSegment(
+    const lanelet::ConstLanelets & current_lanes, const double arc_length_from_current,
+    const double backward_path_length, const double prepare_length,
+    const double prepare_velocity) const override;
+
+  std::vector<DrivableLanes> getDrivableLanes() const override;
 };
 }  // namespace behavior_path_planner
 #endif  // BEHAVIOR_PATH_PLANNER__SCENE_MODULE__LANE_CHANGE__NORMAL_HPP_

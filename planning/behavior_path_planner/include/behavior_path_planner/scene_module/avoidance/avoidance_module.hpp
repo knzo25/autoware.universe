@@ -271,11 +271,24 @@ private:
   // debug
   mutable DebugData debug_data_;
   mutable std::shared_ptr<AvoidanceDebugMsgArray> debug_msg_ptr_;
-  void setDebugData(
-    const AvoidancePlanningData & data, const PathShifter & shifter, const DebugData & debug) const;
-  void updateAvoidanceDebugData(std::vector<AvoidanceDebugMsg> & avoidance_debug_msg_array) const;
   mutable std::vector<AvoidanceDebugMsg> debug_avoidance_initializer_for_shift_line_;
   mutable rclcpp::Time debug_avoidance_initializer_for_shift_line_time_;
+
+  /**
+   * @brief fill debug markers.
+   */
+  void updateDebugMarker(
+    const AvoidancePlanningData & data, const PathShifter & shifter, const DebugData & debug) const;
+
+  /**
+   * @brief fill information markers that are shown in Rviz by default.
+   */
+  void updateInfoMarker(const AvoidancePlanningData & data) const;
+
+  /**
+   * @brief fill debug msg that are published as a topic.
+   */
+  void updateAvoidanceDebugData(std::vector<AvoidanceDebugMsg> & avoidance_debug_msg_array) const;
 
   double getLateralMarginFromVelocity(const double velocity) const;
 
@@ -413,12 +426,7 @@ private:
 
   double getCurrentBaseShift() const { return path_shifter_.getBaseOffset(); }
 
-  Pose getUnshiftedEgoPose(const ShiftedPath & prev_path) const;
-
   PathWithLaneId extendBackwardLength(const PathWithLaneId & original_path) const;
-
-  PathWithLaneId calcCenterLinePath(
-    const std::shared_ptr<const PlannerData> & planner_data, const Pose & pose) const;
 
   // TODO(Horibe): think later.
   // for unique ID

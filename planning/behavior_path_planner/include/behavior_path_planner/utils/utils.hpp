@@ -23,7 +23,6 @@
 #include "motion_utils/motion_utils.hpp"
 #include "perception_utils/predicted_path_utils.hpp"
 
-#include <opencv2/opencv.hpp>
 #include <route_handler/route_handler.hpp>
 #include <tier4_autoware_utils/tier4_autoware_utils.hpp>
 
@@ -76,6 +75,30 @@ using tier4_autoware_utils::LinearRing2d;
 using tier4_autoware_utils::LineString2d;
 using tier4_autoware_utils::Polygon2d;
 using vehicle_info_util::VehicleInfo;
+
+struct PolygonPoint
+{
+  geometry_msgs::msg::Point point;
+  size_t bound_seg_idx;
+  double lon_dist_to_segment;
+  double lat_dist_to_bound;
+
+  bool is_after(const PolygonPoint & other_point) const
+  {
+    if (bound_seg_idx == other_point.bound_seg_idx) {
+      return other_point.lon_dist_to_segment < lon_dist_to_segment;
+    }
+    return other_point.bound_seg_idx < bound_seg_idx;
+  }
+
+  bool is_outside_bounds(const bool is_on_right) const
+  {
+    if (is_on_right) {
+      return lat_dist_to_bound < 0.0;
+    }
+    return 0.0 < lat_dist_to_bound;
+  };
+};
 
 struct FrenetPoint
 {
@@ -216,8 +239,8 @@ void generateDrivableArea(
   const std::shared_ptr<const PlannerData> planner_data, const bool is_driving_forward = true);
 
 void generateDrivableArea(
-  PathWithLaneId & path, const double vehicle_length, const double vehicle_width,
-  const double margin, const bool is_driving_forward = true);
+  PathWithLaneId & path, const double vehicle_length, const double offset,
+  const bool is_driving_forward = true);
 
 lanelet::ConstLineStrings3d getMaximumDrivableArea(
   const std::shared_ptr<const PlannerData> & planner_data);
@@ -269,6 +292,16 @@ PathWithLaneId refinePathForGoal(
 
 bool containsGoal(const lanelet::ConstLanelets & lanes, const lanelet::Id & goal_id);
 
+PathWithLaneId createGoalAroundPath(
+  const std::shared_ptr<RouteHandler> & route_handler,
+  const std::optional<PoseWithUuidStamped> & modified_goal);
+
+bool isInLanelets(const Pose & pose, const lanelet::ConstLanelets & lanes);
+
+bool isEgoOutOfRoute(
+  const Pose & self_pose, const std::optional<PoseWithUuidStamped> & modified_goal,
+  const std::shared_ptr<RouteHandler> & route_handler);
+
 // path management
 
 // TODO(Horibe) There is a similar function in route_handler. Check.
@@ -277,13 +310,11 @@ std::shared_ptr<PathWithLaneId> generateCenterLinePath(
 
 PathPointWithLaneId insertStopPoint(const double length, PathWithLaneId & path);
 
-double getSignedDistanceFromShoulderLeftBoundary(
-  const lanelet::ConstLanelets & shoulder_lanelets, const Pose & pose);
-std::optional<double> getSignedDistanceFromShoulderLeftBoundary(
+double getSignedDistanceFromBoundary(
+  const lanelet::ConstLanelets & shoulder_lanelets, const Pose & pose, const bool left_side);
+std::optional<double> getSignedDistanceFromBoundary(
   const lanelet::ConstLanelets & shoulder_lanelets, const LinearRing2d & footprint,
-  const Pose & vehicle_pose);
-double getSignedDistanceFromRightBoundary(
-  const lanelet::ConstLanelets & lanelets, const Pose & pose);
+  const Pose & vehicle_pose, const bool left_side);
 
 // misc
 
@@ -306,13 +337,8 @@ PathWithLaneId setDecelerationVelocity(
   const lanelet::ConstLanelets & lanelet_sequence, const double lane_change_prepare_duration,
   const double lane_change_buffer);
 
-PathWithLaneId setDecelerationVelocity(
-  const PathWithLaneId & input, const double target_velocity, const Pose target_pose,
-  const double buffer, const double deceleration_interval);
-
 BehaviorModuleOutput getReferencePath(
   const lanelet::ConstLanelet & current_lane,
-  const std::shared_ptr<LaneFollowingParameters> & parameters,
   const std::shared_ptr<const PlannerData> & planner_data);
 
 // object label
@@ -343,17 +369,25 @@ boost::optional<std::pair<Pose, Polygon2d>> getEgoExpectedPoseAndConvertToPolygo
 
 bool checkPathRelativeAngle(const PathWithLaneId & path, const double angle_threshold);
 
-double calcTotalLaneChangeLength(
-  const BehaviorPathPlannerParameters & common_param, const bool include_buffer = true);
+double calcLaneChangingTime(
+  const double lane_changing_velocity, const double shift_length,
+  const BehaviorPathPlannerParameters & common_parameter);
 
-double calcLaneChangeBuffer(
-  const BehaviorPathPlannerParameters & common_param, const int num_lane_change,
+double calcMinimumLaneChangeLength(
+  const BehaviorPathPlannerParameters & common_param, const std::vector<double> & shift_intervals,
   const double length_to_intersection = 0.0);
 
 lanelet::ConstLanelets getLaneletsFromPath(
   const PathWithLaneId & path, const std::shared_ptr<route_handler::RouteHandler> & route_handler);
 
 std::string convertToSnakeCase(const std::string & input_str);
+
+std::vector<DrivableLanes> combineDrivableLanes(
+  const std::vector<DrivableLanes> & original_drivable_lanes_vec,
+  const std::vector<DrivableLanes> & new_drivable_lanes_vec);
+
+void extractObstaclesFromDrivableArea(
+  PathWithLaneId & path, const std::vector<DrivableAreaInfo::Obstacle> & obstacles);
 }  // namespace behavior_path_planner::utils
 
 #endif  // BEHAVIOR_PATH_PLANNER__UTILS__UTILS_HPP_

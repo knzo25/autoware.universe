@@ -52,26 +52,29 @@ using tier4_planning_msgs::msg::LaneChangeDebugMsgArray;
 class LaneChangeBase
 {
 public:
-  LaneChangeBase(const std::shared_ptr<LaneChangeParameters> & parameters, Direction direction)
-  : parameters_{parameters}, direction_{direction}
+  LaneChangeBase(
+    std::shared_ptr<LaneChangeParameters> parameters, LaneChangeModuleType type,
+    Direction direction)
+  : lane_change_parameters_{std::move(parameters)}, direction_{direction}, type_{type}
   {
+    prev_module_reference_path_ = std::make_shared<PathWithLaneId>();
+    prev_module_path_ = std::make_shared<PathWithLaneId>();
+    prev_drivable_lanes_ = std::make_shared<std::vector<DrivableLanes>>();
   }
 
+  LaneChangeBase(const LaneChangeBase &) = delete;
+  LaneChangeBase(LaneChangeBase &&) = delete;
+  LaneChangeBase & operator=(const LaneChangeBase &) = delete;
+  LaneChangeBase & operator=(LaneChangeBase &&) = delete;
   virtual ~LaneChangeBase() = default;
 
-  virtual void updateLaneChangeStatus(
-    const PathWithLaneId & prev_module_reference_path,
-    const PathWithLaneId & previous_module_path) = 0;
+  virtual void updateLaneChangeStatus() = 0;
 
-  virtual std::pair<bool, bool> getSafePath(
-    const PathWithLaneId & prev_module_reference_path, const PathWithLaneId & prev_module_path,
-    LaneChangePath & safe_path) const = 0;
+  virtual std::pair<bool, bool> getSafePath(LaneChangePath & safe_path) const = 0;
 
-  virtual PathWithLaneId generatePlannedPath(
-    const std::vector<DrivableLanes> & prev_drivable_lanes) = 0;
+  virtual BehaviorModuleOutput generateOutput() = 0;
 
-  virtual void generateExtendedDrivableArea(
-    const std::vector<DrivableLanes> & prev_drivable_lanes, PathWithLaneId & path) = 0;
+  virtual void extendOutputDrivableArea(BehaviorModuleOutput & output) = 0;
 
   virtual bool hasFinishedLaneChange() const = 0;
 
@@ -84,6 +87,27 @@ public:
   virtual void resetParameters() = 0;
 
   virtual TurnSignalInfo updateOutputTurnSignal() = 0;
+
+  virtual void setPreviousModulePaths(
+    const std::shared_ptr<PathWithLaneId> & prev_module_reference_path,
+    const std::shared_ptr<PathWithLaneId> & prev_module_path)
+  {
+    if (prev_module_reference_path) {
+      *prev_module_reference_path_ = *prev_module_reference_path;
+    }
+    if (prev_module_path) {
+      *prev_module_path_ = *prev_module_path;
+    }
+  };
+
+  virtual void setPreviousDrivableLanes(const std::vector<DrivableLanes> & prev_drivable_lanes)
+  {
+    if (prev_drivable_lanes_) {
+      *prev_drivable_lanes_ = prev_drivable_lanes;
+    }
+  }
+
+  virtual void updateSpecialData() {}
 
   const LaneChangeStatus & getLaneChangeStatus() const { return status_; }
 
@@ -98,7 +122,7 @@ public:
 
   bool isAbortState() const
   {
-    if (!parameters_->enable_abort_lane_change) {
+    if (!lane_change_parameters_->enable_abort_lane_change) {
       return false;
     }
 
@@ -143,11 +167,32 @@ public:
 
   double getEgoVelocity() const { return getEgoTwist().linear.x; }
 
-  const Direction & getDirection() const { return direction_; }
+  Direction getDirection() const
+  {
+    if (direction_ == Direction::NONE && !status_.lane_change_path.path.points.empty()) {
+      const auto lateral_shift = utils::lane_change::getLateralShift(status_.lane_change_path);
+      return lateral_shift > 0.0 ? Direction::LEFT : Direction::RIGHT;
+    }
+
+    return direction_;
+  }
 
 protected:
-  virtual lanelet::ConstLanelets getLaneChangeLanes(
-    const lanelet::ConstLanelets & current_lanes) const = 0;
+  virtual lanelet::ConstLanelets getCurrentLanes() const = 0;
+
+  virtual int getNumToPreferredLane(const lanelet::ConstLanelet & lane) const = 0;
+
+  virtual PathWithLaneId getPrepareSegment(
+    const lanelet::ConstLanelets & current_lanes, const double arc_length_from_current,
+    const double backward_path_length, const double prepare_length,
+    const double prepare_velocity) const = 0;
+
+  virtual bool getLaneChangePaths(
+    const lanelet::ConstLanelets & original_lanelets,
+    const lanelet::ConstLanelets & target_lanelets, Direction direction,
+    LaneChangePaths * candidate_paths) const = 0;
+
+  virtual std::vector<DrivableLanes> getDrivableLanes() const = 0;
 
   virtual bool isApprovedPathSafe(Pose & ego_pose_before_collision) const = 0;
 
@@ -155,10 +200,16 @@ protected:
 
   virtual bool isValidPath(const PathWithLaneId & path) const = 0;
 
+  virtual lanelet::ConstLanelets getLaneChangeLanes(
+    const lanelet::ConstLanelets & current_lanes, Direction direction) const = 0;
+
   bool isNearEndOfLane() const
   {
     const auto & current_pose = getEgoPose();
-    const double threshold = utils::calcTotalLaneChangeLength(planner_data_->parameters);
+    const auto shift_intervals = planner_data_->route_handler->getLateralIntervalsToPreferredLane(
+      status_.current_lanes.back());
+    const double threshold =
+      utils::calcMinimumLaneChangeLength(planner_data_->parameters, shift_intervals);
 
     return (std::max(0.0, utils::getDistanceToEndOfLane(current_pose, status_.current_lanes)) -
             threshold) < planner_data_->parameters.backward_length_buffer_for_end_of_lane;
@@ -175,14 +226,17 @@ protected:
 
   LaneChangeStates current_lane_change_state_{};
 
-  std::shared_ptr<LaneChangeParameters> parameters_{};
+  std::shared_ptr<LaneChangeParameters> lane_change_parameters_{};
   std::shared_ptr<LaneChangePath> abort_path_{};
   std::shared_ptr<const PlannerData> planner_data_{};
+  std::shared_ptr<PathWithLaneId> prev_module_reference_path_{};
+  std::shared_ptr<PathWithLaneId> prev_module_path_{};
+  std::shared_ptr<std::vector<DrivableLanes>> prev_drivable_lanes_{};
 
   PathWithLaneId prev_approved_path_{};
 
   double lane_change_lane_length_{200.0};
-  double check_distance_{100.0};
+  double check_length_{100.0};
 
   bool is_abort_path_approved_{false};
   bool is_abort_approval_requested_{false};

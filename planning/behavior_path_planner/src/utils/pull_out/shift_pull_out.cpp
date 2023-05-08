@@ -92,9 +92,10 @@ boost::optional<PullOutPath> ShiftPullOut::plan(Pose start_pose, Pose goal_pose)
     // check lane departure
     const auto drivable_lanes =
       utils::generateDrivableLanesWithShoulderLanes(road_lanes, shoulder_lanes);
+    const auto & dp = planner_data_->drivable_area_expansion_parameters;
     const auto expanded_lanes = utils::expandLanelets(
-      drivable_lanes, parameters_.drivable_area_left_bound_offset,
-      parameters_.drivable_area_right_bound_offset);
+      drivable_lanes, dp.drivable_area_left_bound_offset, dp.drivable_area_right_bound_offset,
+      dp.drivable_area_types_to_skip);
     if (lane_departure_checker_->checkPathWillLeaveLane(
           utils::transformToLanelets(expanded_lanes), path_start_to_end)) {
       continue;
@@ -108,6 +109,8 @@ boost::optional<PullOutPath> ShiftPullOut::plan(Pose start_pose, Pose goal_pose)
     }
 
     // Generate drivable area
+    // for old architecture
+    // NOTE: drivable_area_info is assigned outside this function.
     const auto shorten_lanes = utils::cutOverlappedLanes(shift_path, drivable_lanes);
     utils::generateDrivableArea(
       shift_path, shorten_lanes, common_parameters.vehicle_length, planner_data_);
