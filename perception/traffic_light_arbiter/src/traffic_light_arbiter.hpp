@@ -23,7 +23,7 @@
 
 #include <lanelet2_core/Forward.h>
 
-#include <unordered_map>
+#include <unordered_set>
 
 class TrafficLightArbiter : public rclcpp::Node
 {
@@ -31,29 +31,29 @@ public:
   explicit TrafficLightArbiter(const rclcpp::NodeOptions & options);
 
 private:
+  using Element = autoware_perception_msgs::msg::TrafficLightElement;
   using LaneletMapBin = autoware_auto_mapping_msgs::msg::HADMapBin;
-  using TrafficLightArray = autoware_perception_msgs::msg::TrafficLightArray;
   using TrafficSignalArray = autoware_perception_msgs::msg::TrafficSignalArray;
+  using TrafficSignal = autoware_perception_msgs::msg::TrafficSignal;
+
   rclcpp::Subscription<LaneletMapBin>::SharedPtr map_sub_;
-  rclcpp::Subscription<TrafficLightArray>::SharedPtr perception_tlr_sub_;
-  rclcpp::Subscription<TrafficLightArray>::SharedPtr v2x_tlr_sub_;
+  rclcpp::Subscription<TrafficSignalArray>::SharedPtr perception_tlr_sub_;
+  rclcpp::Subscription<TrafficSignalArray>::SharedPtr v2x_tlr_sub_;
   rclcpp::Publisher<TrafficSignalArray>::SharedPtr pub_;
 
   void onMap(const LaneletMapBin::ConstSharedPtr msg);
-  void onPerceptionMsg(const TrafficLightArray::ConstSharedPtr msg);
-  void onV2xMsg(const TrafficLightArray::ConstSharedPtr msg);
+  void onPerceptionMsg(const TrafficSignalArray::ConstSharedPtr msg);
+  void onV2xMsg(const TrafficSignalArray::ConstSharedPtr msg);
   void arbiterAndPublish(const builtin_interfaces::msg::Time & stamp);
 
-  std::unordered_map<lanelet::Id, lanelet::Id> mapping_; // map from traffic light is to regulatory element id
-
-
-  // Current implementation
+  std::unordered_set<lanelet::Id> map_regulatory_elements_set_;
 
   double v2x_time_tolerance_;
   double perception_time_tolerance_;
+  bool v2x_priority_;
 
-  TrafficLightArray latest_perception_msg_;
-  TrafficLightArray latest_v2x_msg_;
+  TrafficSignalArray latest_perception_msg_;
+  TrafficSignalArray latest_v2x_msg_;
 };
 
 #endif  // TRAFFIC_LIGHT_ARBITER_HPP_

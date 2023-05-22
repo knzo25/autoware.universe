@@ -15,15 +15,16 @@
 #include "traffic_light_arbiter.hpp"
 
 #include <lanelet2_extension/utility/message_conversion.hpp>
+#include <rclcpp/time.hpp>
 
 #include <lanelet2_core/primitives/BasicRegulatoryElements.h>
 
 #include <map>
 #include <memory>
 #include <tuple>
+#include <unordered_map>
+#include <utility>
 #include <vector>
-
-#include <rclcpp/time.hpp>
 
 namespace lanelet
 {
@@ -49,17 +50,18 @@ TrafficLightArbiter::TrafficLightArbiter(const rclcpp::NodeOptions & options)
 {
   v2x_time_tolerance_ = this->declare_parameter<bool>("v2x_time_tolerance", false);
   perception_time_tolerance_ = this->declare_parameter<bool>("perception_time_tolerance", false);
+  v2x_priority_ = this->declare_parameter<bool>("v2x_priority", false);
 
   map_sub_ = create_subscription<LaneletMapBin>(
     "~/sub/vector_map", rclcpp::QoS(1).transient_local(),
     std::bind(&TrafficLightArbiter::onMap, this, std::placeholders::_1));
 
-  perception_tlr_sub_ = create_subscription<TrafficLightArray>(
-    "~/sub/perception_traffic_lights", rclcpp::QoS(1),
+  perception_tlr_sub_ = create_subscription<TrafficSignalArray>(
+    "~/sub/perception_traffic_signals", rclcpp::QoS(1),
     std::bind(&TrafficLightArbiter::onPerceptionMsg, this, std::placeholders::_1));
 
-  v2x_tlr_sub_ = create_subscription<TrafficLightArray>(
-    "~/sub/v2x_traffic_lights", rclcpp::QoS(1),
+  v2x_tlr_sub_ = create_subscription<TrafficSignalArray>(
+    "~/sub/v2x_traffic_signals", rclcpp::QoS(1),
     std::bind(&TrafficLightArbiter::onV2xMsg, this, std::placeholders::_1));
 
   pub_ = create_publisher<TrafficSignalArray>("~/pub/traffic_signals", rclcpp::QoS(1));
@@ -71,111 +73,111 @@ void TrafficLightArbiter::onMap(const LaneletMapBin::ConstSharedPtr msg)
   lanelet::utils::conversion::fromBinMsg(*msg, map);
 
   const auto signals = lanelet::filter_traffic_signals(map);
-  mapping_.clear();
+  map_regulatory_elements_set_.clear();
   for (const auto & signal : signals) {
-    for (const auto & light : signal->trafficLights()) {
-      mapping_[light.id()] = signal->id();
-      RCLCPP_WARN(get_logger(), "light=%d -> signal=%d", static_cast<int>(light.id()), static_cast<int>(signal->id()));
-    }
+    map_regulatory_elements_set_.emplace(signal->id());
   }
 }
 
-void TrafficLightArbiter::onPerceptionMsg(const TrafficLightArray::ConstSharedPtr msg)
+void TrafficLightArbiter::onPerceptionMsg(const TrafficSignalArray::ConstSharedPtr msg)
 {
   latest_perception_msg_ = *msg;
 
-  if ((rclcpp::Time(msg->stamp) - rclcpp::Time(latest_v2x_msg_.stamp)).seconds() > v2x_time_tolerance_) {
-    latest_v2x_msg_.lights.clear();    
+  if (
+    (rclcpp::Time(msg->stamp) - rclcpp::Time(latest_v2x_msg_.stamp)).seconds() >
+    v2x_time_tolerance_) {
+    latest_v2x_msg_.signals.clear();
   }
 
   arbiterAndPublish(msg->stamp);
 }
 
-void TrafficLightArbiter::onV2xMsg(const TrafficLightArray::ConstSharedPtr msg)
+void TrafficLightArbiter::onV2xMsg(const TrafficSignalArray::ConstSharedPtr msg)
 {
   latest_v2x_msg_ = *msg;
 
-  if ((rclcpp::Time(msg->stamp) - rclcpp::Time(latest_perception_msg_.stamp)).seconds() > perception_time_tolerance_) {
-    latest_v2x_msg_.lights.clear();    
+  if (
+    (rclcpp::Time(msg->stamp) - rclcpp::Time(latest_perception_msg_.stamp)).seconds() >
+    perception_time_tolerance_) {
+    latest_v2x_msg_.signals.clear();
   }
 
-  arbiterAndPublish(msg->stamp);  
+  arbiterAndPublish(msg->stamp);
 }
 
 void TrafficLightArbiter::arbiterAndPublish(const builtin_interfaces::msg::Time & stamp)
 {
-  using TrafficSignal = autoware_perception_msgs::msg::TrafficSignal;
-  using Element = autoware_perception_msgs::msg::TrafficLightElement;
-  using ElementAndId = std::pair<Element, lanelet::Id>;
-  
-  std::unordered_map<lanelet::Id, std::vector<ElementAndId>> regulatory_element_lights_map;
+  using ElementAndPriority = std::pair<Element, bool>;
+  std::unordered_map<lanelet::Id, std::vector<ElementAndPriority>> regulatory_element_signals_map;
 
-    // Wait for vector map to create id mapping.
-  if (mapping_.empty()) {
-    RCLCPP_WARN(get_logger(), "Received light traffic messages before a map");
+  if (map_regulatory_elements_set_.empty()) {
+    RCLCPP_WARN(get_logger(), "Received traffic signal messages before a map");
     return;
   }
 
-  // Create function to add
-  auto add_light_function = [&](const auto & light){
-    const auto id = light.traffic_light_id;
-    if (!mapping_.count(id)) {
+  auto add_signal_function = [&](const auto & signal, bool priority) {
+    const auto id = signal.traffic_signal_id;
+    if (!map_regulatory_elements_set_.count(id)) {
+      RCLCPP_WARN(
+        get_logger(), "Received a traffic signal not present in the current map (%lu)", id);
       return;
     }
-    auto & elements = regulatory_element_lights_map[mapping_[id]];
-    for (const auto & element : light.elements) {
-      elements.emplace_back(element, id);
+
+    auto & elements_and_priority = regulatory_element_signals_map[id];
+    for (const auto & element : signal.elements) {
+      elements_and_priority.emplace_back(element, priority);
     }
   };
 
-
-  for (const auto & light : latest_perception_msg_.lights) {
-    add_light_function(light);
+  for (const auto & signal : latest_perception_msg_.signals) {
+    add_signal_function(signal, false);
   }
 
-  for (const auto & light : latest_v2x_msg_.lights) {
-    add_light_function(light);
+  for (const auto & signal : latest_v2x_msg_.signals) {
+    add_signal_function(signal, v2x_priority_);
   }
 
-  // Use the most confident traffic light element in the same state.
-  const auto get_highest_confidence_elements = [](const std::vector<ElementAndId> & element_and_id_vector) {
-    using Key = std::tuple<Element::_color_type, Element::_shape_type>;
-    std::map<Key, ElementAndId> highest_score_element_map;
+  const auto get_highest_confidence_elements =
+    [](const std::vector<ElementAndPriority> & elements_and_priority_vector) {
+      using Key = std::tuple<Element::_color_type, Element::_shape_type>;
+      std::map<Key, ElementAndPriority> highest_score_element_and_priority_map;
+      std::vector<Element> highest_score_elements_vector;
 
-    for (const auto & element_and_id : element_and_id_vector) {
-      const auto key = std::make_tuple(element_and_id.first.color, element_and_id.first.shape);
-      auto [iter, success] = highest_score_element_map.try_emplace(key, element_and_id);
-      auto & iter_element_and_id = std::get<1>(*iter);
-      if (!success && iter_element_and_id.first.confidence < element_and_id.first.confidence) {
-        iter_element_and_id = element_and_id;
+      for (const auto & elements_and_priority : elements_and_priority_vector) {
+        const auto & element = elements_and_priority.first;
+        const auto & element_priority = elements_and_priority.second;
+        const auto key = std::make_tuple(element.color, element.shape);
+        auto [iter, success] =
+          highest_score_element_and_priority_map.try_emplace(key, elements_and_priority);
+        const auto & iter_element = iter->second.first;
+        const auto & iter_priority = iter->second.second;
+
+        if (
+          !success &&
+          (iter_element.confidence < element.confidence || iter_priority < element_priority)) {
+          iter->second = elements_and_priority;
+        }
       }
-    }
 
-    std::unordered_map<lanelet::Id, TrafficSignal> result_signal_map;
-    for (const auto & [k, v] : highest_score_element_map) {
-      auto & signal = result_signal_map[v.second];
-      signal.traffic_signal_id = v.second;
-      signal.elements.push_back(v.first);
-    }
+      for (const auto & [k, v] : highest_score_element_and_priority_map) {
+        highest_score_elements_vector.emplace_back(v.first);
+      }
 
-    std::vector<TrafficSignal> result_signal_vector;
-    result_signal_vector.resize(result_signal_map.size());
+      return highest_score_elements_vector;
+    };
 
-    for (const auto & [k, result_signal] : result_signal_map) {
-      result_signal_vector.push_back(result_signal);
-    }
+  TrafficSignalArray output_signals_msg;
+  output_signals_msg.stamp = stamp;
+  output_signals_msg.signals.reserve(regulatory_element_signals_map.size());
 
-    return result_signal_vector;
-  };
-
-  TrafficSignalArray array;
-  array.stamp = stamp;
-  for (const auto & [regulatory_element_id, elements] : regulatory_element_lights_map) {
-    std::vector signal_msgs = get_highest_confidence_elements(elements);
-    array.signals.insert(array.signals.end(), signal_msgs.begin(), signal_msgs.end());
+  for (const auto & [regulatory_element_id, elements] : regulatory_element_signals_map) {
+    TrafficSignal signal_msg;
+    signal_msg.traffic_signal_id = regulatory_element_id;
+    signal_msg.elements = get_highest_confidence_elements(elements);
+    output_signals_msg.signals.emplace_back(signal_msg);
   }
 
-  pub_->publish(array);
+  pub_->publish(output_signals_msg);
 }
 
 #include <rclcpp_components/register_node_macro.hpp>
