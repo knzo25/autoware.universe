@@ -15,6 +15,7 @@
 #ifndef TEST_VOXEL_GENERATOR_HPP_
 #define TEST_VOXEL_GENERATOR_HPP_
 
+#include <cuda_blackboard/cuda_pointcloud2.hpp>
 #include <lidar_centerpoint/preprocess/voxel_generator.hpp>
 #include <rclcpp/rclcpp.hpp>
 
@@ -36,6 +37,7 @@ public:
   rclcpp::Node::SharedPtr node_{};
 
   std::unique_ptr<sensor_msgs::msg::PointCloud2> cloud1_{}, cloud2_{};
+  std::shared_ptr<cuda_blackboard::CudaPointCloud2> cuda_cloud1_{}, cuda_cloud2_{};
   geometry_msgs::msg::TransformStamped transform1_{}, transform2_{};
 
   std::unique_ptr<centerpoint::DensificationParam> densification_param_ptr_{};

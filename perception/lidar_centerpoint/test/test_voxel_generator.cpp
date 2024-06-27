@@ -16,7 +16,7 @@
 
 #include "gtest/gtest.h"
 
-#include "sensor_msgs/point_cloud2_iterator.hpp"
+#include <sensor_msgs/point_cloud2_iterator.hpp>
 
 void VoxelGeneratorTest::SetUp()
 {
@@ -45,6 +45,8 @@ void VoxelGeneratorTest::SetUp()
   cloud2_ = std::make_unique<sensor_msgs::msg::PointCloud2>();
 
   cloud1_->header.frame_id = lidar_frame_;
+  cloud1_->height = 1;
+  cloud1_->width = points_per_pointcloud_;
 
   // Set up the fields for x, y, and z coordinates
   cloud1_->fields.resize(3);
@@ -73,6 +75,9 @@ void VoxelGeneratorTest::SetUp()
   cloud1_->header.stamp.nanosec = 100'000'000;
   cloud2_->header.stamp.sec = 1;
   cloud2_->header.stamp.nanosec = 200'000'000;
+
+  cuda_cloud1_ = std::make_shared<cuda_blackboard::CudaPointCloud2>(*cloud1_);
+  cuda_cloud2_ = std::make_shared<cuda_blackboard::CudaPointCloud2>(*cloud2_);
 
   tf2_buffer_ = std::make_unique<tf2_ros::Buffer>(node_->get_clock());
   tf2_buffer_->setUsingDedicatedThread(true);
@@ -124,7 +129,7 @@ TEST_F(VoxelGeneratorTest, SingleFrame)
     points_d.get(), points.data(), capacity_ * config.point_feature_size_ * sizeof(float),
     cudaMemcpyHostToDevice);
 
-  bool status1 = voxel_generator.enqueuePointCloud(*cloud1_, *tf2_buffer_, stream_);
+  bool status1 = voxel_generator.enqueuePointCloud(cuda_cloud1_, *tf2_buffer_);
   std::size_t generated_points_num = voxel_generator.generateSweepPoints(points_d.get(), stream_);
 
   cudaMemcpy(
@@ -171,8 +176,8 @@ TEST_F(VoxelGeneratorTest, TwoFramesNoTf)
     points_d.get(), points.data(), capacity_ * config.point_feature_size_ * sizeof(float),
     cudaMemcpyHostToDevice);
 
-  bool status1 = voxel_generator.enqueuePointCloud(*cloud1_, *tf2_buffer_, stream_);
-  bool status2 = voxel_generator.enqueuePointCloud(*cloud2_, *tf2_buffer_, stream_);
+  bool status1 = voxel_generator.enqueuePointCloud(cuda_cloud1_, *tf2_buffer_);
+  bool status2 = voxel_generator.enqueuePointCloud(cuda_cloud2_, *tf2_buffer_);
   std::size_t generated_points_num = voxel_generator.generateSweepPoints(points_d.get(), stream_);
 
   cudaMemcpy(
@@ -208,8 +213,8 @@ TEST_F(VoxelGeneratorTest, TwoFrames)
   tf2_buffer_->setTransform(transform1_, "authority1");
   tf2_buffer_->setTransform(transform2_, "authority1");
 
-  bool status1 = voxel_generator.enqueuePointCloud(*cloud1_, *tf2_buffer_, stream_);
-  bool status2 = voxel_generator.enqueuePointCloud(*cloud2_, *tf2_buffer_, stream_);
+  bool status1 = voxel_generator.enqueuePointCloud(cuda_cloud1_, *tf2_buffer_);
+  bool status2 = voxel_generator.enqueuePointCloud(cuda_cloud2_, *tf2_buffer_);
   std::size_t generated_points_num = voxel_generator.generateSweepPoints(points_d.get(), stream_);
 
   cudaMemcpy(
