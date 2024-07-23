@@ -22,6 +22,9 @@ include_directories(
   ${EIGEN3_INCLUDE_DIRS}
   ${Sophus_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
+  ${autoware_point_types_INCLUDE_DIRS}
+  ${autoware_universe_utils_INCLUDE_DIRS}
+  ${pcl_ros_INCLUDE_DIRS}
 )
 
 add_library(pointcloud_preprocessor_filter_base SHARED
@@ -32,18 +35,27 @@ add_library(pointcloud_preprocessor_filter_base SHARED
 target_include_directories(pointcloud_preprocessor_filter_base PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
   "$<INSTALL_INTERFACE:include/${PROJECT_NAME}>"
-  ${autoware_point_types_INCLUDE_DIRS}
 )
 
 ament_target_dependencies(pointcloud_preprocessor_filter_base
+  autoware_lanelet2_extension
+  cv_bridge
+  diagnostic_updater
+  image_transport
   message_filters
-  pcl_conversions
+  nav_msgs
+  pcl_msgs
+  point_cloud_msg_wrapper
   rclcpp
+  rclcpp_components
   sensor_msgs
+  std_msgs
+  tf2
+  tf2_eigen
+  tf2_geometry_msgs
   tf2_ros
-  autoware_universe_utils
-  pcl_ros
-  autoware_point_types
+  tier4_debug_msgs
+  tier4_pcl_extensions
 )
 
 add_library(faster_voxel_grid_downsample_filter SHARED
@@ -61,7 +73,7 @@ ament_target_dependencies(faster_voxel_grid_downsample_filter
   sensor_msgs
 )
 
-ament_auto_add_library(pointcloud_preprocessor_filter SHARED
+add_library(pointcloud_preprocessor_filter SHARED
   src/concatenate_data/concatenate_and_time_sync_nodelet.cpp
   src/concatenate_data/concatenate_pointclouds.cpp
   src/time_synchronizer/time_synchronizer_nodelet.cpp
@@ -87,13 +99,27 @@ ament_auto_add_library(pointcloud_preprocessor_filter SHARED
   src/utility/geometry.cpp
 )
 
+target_include_directories(faster_voxel_grid_downsample_filter PUBLIC
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+  "$<INSTALL_INTERFACE:include/${PROJECT_NAME}>"
+)
+
+set_target_properties (pcl_ros::pcl_ros_tf PROPERTIES LINK_LIBRARIES "")
+set_target_properties (pcl_ros::pcl_ros_tf PROPERTIES INTERFACE_LINK_LIBRARIES "")
+
 target_link_libraries(pointcloud_preprocessor_filter
   pointcloud_preprocessor_filter_base
   faster_voxel_grid_downsample_filter
   ${Boost_LIBRARIES}
-  ${OpenCV_LIBRARIES}
+  opencv_core
   ${Sophus_LIBRARIES}
-  ${PCL_LIBRARIES}
+  ${PCL_COMMON_LIBRARIES}
+  ${PCL_KDTREE_LIBRARIES}
+  ${PCL_SEARCH_LIBRARIES}
+  ${PCL_FILTERS_LIBRARIES}
+  ${autoware_point_types_TARGETS}
+  ${autoware_universe_utils_TARGETS}
+  ${pcl_ros_TARGETS}
 )
 
 # ========== Time synchronizer ==========

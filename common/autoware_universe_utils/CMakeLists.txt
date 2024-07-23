@@ -10,7 +10,12 @@ find_package(Boost REQUIRED)
 
 find_package(fmt REQUIRED)
 
-ament_auto_add_library(autoware_universe_utils SHARED
+include_directories(SYSTEM
+  include
+  ${PCL_COMMON_INCLUDE_DIRS}
+)
+
+add_library(autoware_universe_utils SHARED
   src/geometry/geometry.cpp
   src/geometry/pose_deviation.cpp
   src/geometry/boost_polygon_utils.cpp
@@ -25,9 +30,40 @@ ament_auto_add_library(autoware_universe_utils SHARED
   src/system/time_keeper.cpp
 )
 
+target_include_directories(autoware_universe_utils PUBLIC
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+  "$<INSTALL_INTERFACE:include/${PROJECT_NAME}>"
+)
+
+ament_target_dependencies(autoware_universe_utils
+  autoware_internal_msgs
+  autoware_perception_msgs
+  autoware_planning_msgs
+  autoware_vehicle_msgs
+  builtin_interfaces
+  diagnostic_msgs
+  geometry_msgs
+  logging_demo
+  pcl_conversions
+  rclcpp
+  tf2
+  tf2_geometry_msgs
+  tier4_debug_msgs
+  tier4_planning_msgs
+  unique_identifier_msgs
+  visualization_msgs
+)
+
 target_link_libraries(autoware_universe_utils
   fmt::fmt
+  ${PCL_COMMON_LIBRARIES}
 )
+
+install(TARGETS ${PROJECT_NAME} EXPORT export_${PROJECT_NAME})
+install(DIRECTORY include/ DESTINATION include/${PROJECT_NAME})
+
+ament_export_include_directories("include/${PROJECT_NAME}")
+ament_export_targets(export_${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_ros REQUIRED)

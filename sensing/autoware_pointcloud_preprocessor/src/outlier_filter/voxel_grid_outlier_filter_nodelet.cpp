@@ -16,7 +16,6 @@
 
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/search/kdtree.h>
-#include <pcl/segmentation/segment_differences.h>
 
 #include <vector>
 
