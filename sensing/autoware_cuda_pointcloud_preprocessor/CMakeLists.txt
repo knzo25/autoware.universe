@@ -35,6 +35,11 @@ include_directories(
 list(APPEND CUDA_NVCC_FLAGS "--expt-relaxed-constexpr -diag-suppress 20012") # cSpell: ignore expt
 
 cuda_add_library(cuda_pointcloud_preprocessor_lib SHARED
+  src/cuda_concatenate_data/cuda_concatenate_and_time_sync_node.cpp
+  src/cuda_concatenate_data/cuda_combine_cloud_handler.cpp
+  src/cuda_concatenate_data/cuda_combine_cloud_handler_kernel.cu
+  src/cuda_concatenate_data/cuda_cloud_collector.cpp
+  src/cuda_concatenate_data/cuda_collector_matching_strategy.cpp
   src/cuda_pointcloud_preprocessor/cuda_pointcloud_preprocessor.cu
   src/cuda_pointcloud_preprocessor/common_kernels.cu
   src/cuda_pointcloud_preprocessor/organize_kernels.cu
@@ -44,17 +49,21 @@ cuda_add_library(cuda_pointcloud_preprocessor_lib SHARED
 
 target_link_libraries(cuda_pointcloud_preprocessor_lib
   ${PCL_LIBRARIES}
+  ${autoware_pointcloud_preprocessor_TARGETS}
 )
 
 target_include_directories(cuda_pointcloud_preprocessor_lib SYSTEM PRIVATE
+  ${autoware_pointcloud_preprocessor_INCLUDE_DIRS}
   ${autoware_point_types_INCLUDE_DIRS}
   ${cuda_blackboard_INCLUDE_DIRS}
+  ${diagnostic_msgs_INCLUDE_DIRS}
   ${geometry_msgs_INCLUDE_DIRS}
-  ${nebula_common_INCLUDE_DIRS}
   ${rclcpp_INCLUDE_DIRS}
+  ${rclcpp_components_INCLUDE_DIRS}
   ${rcl_interfaces_INCLUDE_DIRS}
   ${sensor_msgs_INCLUDE_DIRS}
   ${tf2_INCLUDE_DIRS}
+  ${tf2_msgs_INCLUDE_DIRS}
 )
 
 # Targets
@@ -64,13 +73,22 @@ ament_auto_add_library(cuda_pointcloud_preprocessor SHARED
 
 target_link_libraries(cuda_pointcloud_preprocessor
   ${CUDA_LIBRARIES}
+
+  ${diagnostic_msgs_LIBRARIES}
   cuda_pointcloud_preprocessor_lib
 )
+
+# ========== Pointcloud preprocessor  ==========
 
 rclcpp_components_register_node(cuda_pointcloud_preprocessor
   PLUGIN "autoware::cuda_pointcloud_preprocessor::CudaPointcloudPreprocessorNode"
   EXECUTABLE cuda_pointcloud_preprocessor_node
 )
+
+# ========== Concatenate and Sync data ==========
+rclcpp_components_register_node(cuda_pointcloud_preprocessor
+  PLUGIN "autoware::cuda_pointcloud_preprocessor::CudaPointCloudConcatenateDataSynchronizerComponent"
+  EXECUTABLE cuda_concatenate_and_time_sync_node)
 
 install(DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}
