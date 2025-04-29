@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(autoware_tensorrt_plugins)
+project(autoware_ptv3)
 
 find_package(autoware_cmake REQUIRED)
 autoware_package()
@@ -98,53 +98,81 @@ if(TRT_AVAIL AND CUDA_AVAIL AND CUDNN_AVAIL AND SPCONV_AVAIL)
   find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 
   add_definitions("-DTV_CUDA")
-
+  add_definitions("-DTV_CUDA_DRIVER")
   # cSpell:ignore expt
   list(APPEND CUDA_NVCC_FLAGS "--expt-relaxed-constexpr -diag-suppress 1675 --extended-lambda")
 
-  cuda_add_library(bev_ops SHARED
-    src/bev_ops/bev_pool_cuda.cu
+  cuda_add_library(${PROJECT_NAME}_cuda_lib SHARED
+    lib/postprocess/postprocess_kernel.cu
+    lib/preprocess/preprocess_kernel.cu
   )
 
-  add_library(${PROJECT_NAME} SHARED
-    src/plugin_utils.cpp
-    #src/custom_argsort_plugin.cpp
-    #src/custom_argsort_plugin_creator.cpp
-    src/custom_unique_plugin.cpp
-    src/custom_unique_plugin_creator.cpp
-    src/quick_cumsum_cuda_plugin.cpp
-    src/quick_cumsum_cuda_plugin_creator.cpp
-    src/get_indices_pairs_implicit_gemm_plugin_creator.cpp
-    src/get_indices_pairs_implicit_gemm_plugin.cpp
-    src/get_indices_pairs_plugin_creator.cpp
-    src/get_indices_pairs_plugin.cpp
-    src/implicit_gemm_plugin_creator.cpp
-    src/implicit_gemm_plugin.cpp
-    src/indice_conv_plugin_creator.cpp
-    src/indice_conv_plugin.cpp
-    src/segment_csr_plugin_creator.cpp
-    src/segment_csr_plugin.cpp
-    src/plugin_registration.cpp
+  target_link_libraries(${PROJECT_NAME}_cuda_lib
+    spconv::spconv
   )
 
-  target_compile_definitions(${PROJECT_NAME} PRIVATE _GLIBCXX_USE_CXX11_ABI=1)
+  target_include_directories(${PROJECT_NAME}_cuda_lib
+    SYSTEM PUBLIC
+    ${autoware_cuda_utils_INCLUDE_DIRS}
+  )
 
-  target_link_libraries(${PROJECT_NAME} PRIVATE
-      ${NVINFER}
-      CUDA::cudart
-      bev_ops
-      spconv::spconv
+  ament_auto_add_library(${PROJECT_NAME}_lib SHARED
+    #lib/ros_utils.cpp
+    lib/ptv3_trt.cpp
+  )
+
+  target_compile_definitions(${PROJECT_NAME}_lib PRIVATE
+    TENSORRT_VERSION_MAJOR=${TENSORRT_VERSION_MAJOR}
+  )
+
+  target_link_libraries(${PROJECT_NAME}_lib
+    ${NVINFER}
+    ${NVONNXPARSER}
+    ${CUDA_LIBRARIES}
+    ${CUBLAS_LIBRARIES}
+    ${CUDA_curand_LIBRARY}
+    ${CUDNN_LIBRARY}
+    ${PROJECT_NAME}_cuda_lib
+  )
+
+  # To suppress unknown-pragmas error. The root-cause is CUB library in CUDA 11.6.
+  # This issue was fixed by https://github.com/NVIDIA/cub/commit/7d608bf1dc14553e2fb219eabeed80b76621b6fe
+  target_include_directories(${PROJECT_NAME}_lib
+    SYSTEM PUBLIC
+    ${CUDA_INCLUDE_DIRS}
+    $(autoware_point_types_INCLUDE_DIRS)
+  )
+
+  ament_auto_add_library(${PROJECT_NAME}_component SHARED
+    src/ptv3_node.cpp
+  )
+
+  target_link_libraries(${PROJECT_NAME}_component
+    ${PROJECT_NAME}_lib
+  )
+
+  rclcpp_components_register_node(${PROJECT_NAME}_component
+    PLUGIN "autoware::ptv3::PTv3Node"
+    EXECUTABLE ${PROJECT_NAME}_node
   )
 
   install(
-    TARGETS ${PROJECT_NAME}
-    DESTINATION share/${PROJECT_NAME}/plugins
+    TARGETS ${PROJECT_NAME}_cuda_lib
+    DESTINATION lib
   )
 
-  ament_auto_package()
+  ament_auto_package(
+    INSTALL_TO_SHARE
+      launch
+      config
+  )
 
 else()
   find_package(ament_cmake_auto REQUIRED)
   ament_auto_find_build_dependencies()
 
+  ament_auto_package(
+    INSTALL_TO_SHARE
+      launch
+  )
 endif()
