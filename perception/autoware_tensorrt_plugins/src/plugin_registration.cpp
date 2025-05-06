@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// #include "autoware/tensorrt_plugins/custom_argsort_plugin_creator.hpp"
+#include "autoware/tensorrt_plugins/custom_argsort_plugin_creator.hpp"
 #include "autoware/tensorrt_plugins/custom_unique_plugin_creator.hpp"
 #include "autoware/tensorrt_plugins/get_indices_pairs_implicit_gemm_plugin_creator.hpp"
 #include "autoware/tensorrt_plugins/get_indices_pairs_plugin_creator.hpp"
@@ -64,8 +64,8 @@ extern "C" void setLoggerFinder(nvinfer1::ILoggerFinder * finder)
 
 extern "C" nvinfer1::IPluginCreatorInterface * const * getCreators(std::int32_t & num_creators)
 {
-  num_creators = 7;
-  // static nvinfer1::plugin::CustomArgsortPluginCreator custom_argsort_plugin_creator{};
+  num_creators = 8;
+  static nvinfer1::plugin::CustomArgsortPluginCreator custom_argsort_plugin_creator{};
   static nvinfer1::plugin::CustomUniquePluginCreator custom_unique_plugin_creator{};
   static nvinfer1::plugin::QuickCumsumCudaPluginCreator quick_cumsum_cuda_plugin_creator{};
   static nvinfer1::plugin::GetIndicesPairsImplicitGemmPluginCreator
@@ -76,13 +76,9 @@ extern "C" nvinfer1::IPluginCreatorInterface * const * getCreators(std::int32_t 
   static nvinfer1::plugin::SegmentCSRPluginCreator segment_csr_plugin_creator{};
 
   static nvinfer1::IPluginCreatorInterface * const plugin_creator_list[] = {
-    // &custom_argsort_plugin_creator,
-    &custom_unique_plugin_creator,
-    &quick_cumsum_cuda_plugin_creator,
-    &get_indices_pairs_implicit_gemm_plugin_creator,
-    &get_indices_pairs_plugin_creator,
-    &implicit_gemm_plugin_creator,
-    &indice_conv_plugin_creator,
-    &segment_csr_plugin_creator};
+    &custom_argsort_plugin_creator,    &custom_unique_plugin_creator,
+    &quick_cumsum_cuda_plugin_creator, &get_indices_pairs_implicit_gemm_plugin_creator,
+    &get_indices_pairs_plugin_creator, &implicit_gemm_plugin_creator,
+    &indice_conv_plugin_creator,       &segment_csr_plugin_creator};
   return plugin_creator_list;
 }

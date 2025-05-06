@@ -35,18 +35,13 @@ constexpr char const * const kSEGMENT_CSR_PLUGIN_NAMESPACE{""};
 namespace nvinfer1::plugin
 {
 
-struct SegmentCSRParameters
-{
-  std::string reduce;
-};
-
 class SegmentCSRPlugin : public IPluginV3,
                          public IPluginV3OneCore,
                          public IPluginV3OneBuild,
                          public IPluginV3OneRuntime
 {
 public:
-  SegmentCSRPlugin(const std::string & name, SegmentCSRParameters const & params);
+  SegmentCSRPlugin(const std::string & name, const std::string & reduce);
 
   ~SegmentCSRPlugin() override = default;
 
@@ -112,7 +107,7 @@ private:
   void initFieldsToSerialize();
 
   std::string layer_name_;
-  SegmentCSRParameters params_;
+  std::string reduce_;
   std::vector<nvinfer1::PluginField> data_to_serialize_;
   nvinfer1::PluginFieldCollection fc_to_serialize_;
 };

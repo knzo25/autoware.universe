@@ -68,6 +68,8 @@ public:
   explicit PTv3TRT(const tensorrt_common::TrtCommonConfig & trt_config, const PTv3Config & config);
   virtual ~PTv3TRT();
 
+  bool fake_segment(sensor_msgs::msg::PointCloud2 & out_msg);
+
   bool segment(
     const sensor_msgs::msg::PointCloud2::ConstSharedPtr & msg,
     sensor_msgs::msg::PointCloud2 & out_msg, std::unordered_map<std::string, double> & proc_timing);

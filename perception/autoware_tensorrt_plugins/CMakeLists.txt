@@ -101,15 +101,21 @@ if(TRT_AVAIL AND CUDA_AVAIL AND CUDNN_AVAIL AND SPCONV_AVAIL)
 
   # cSpell:ignore expt
   list(APPEND CUDA_NVCC_FLAGS "--expt-relaxed-constexpr -diag-suppress 1675 --extended-lambda")
+  list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_75,code=sm_75")
+  list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_80,code=sm_80")
+  list(APPEND CUDA_NVCC_FLAGS "-gencode arch=compute_86,code=sm_86")
 
-  cuda_add_library(bev_ops SHARED
+  cuda_add_library(cuda_ops SHARED
+    src/argsort_ops/argsort.cu
     src/bev_ops/bev_pool_cuda.cu
+    src/scatter_ops/segment_csr.cu
+    src/unique_ops/unique.cu
   )
 
   add_library(${PROJECT_NAME} SHARED
     src/plugin_utils.cpp
-    #src/custom_argsort_plugin.cpp
-    #src/custom_argsort_plugin_creator.cpp
+    src/custom_argsort_plugin.cpp
+    src/custom_argsort_plugin_creator.cpp
     src/custom_unique_plugin.cpp
     src/custom_unique_plugin_creator.cpp
     src/quick_cumsum_cuda_plugin.cpp
@@ -132,7 +138,7 @@ if(TRT_AVAIL AND CUDA_AVAIL AND CUDNN_AVAIL AND SPCONV_AVAIL)
   target_link_libraries(${PROJECT_NAME} PRIVATE
       ${NVINFER}
       CUDA::cudart
-      bev_ops
+      cuda_ops
       spconv::spconv
   )
 

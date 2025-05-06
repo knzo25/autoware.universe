@@ -246,6 +246,8 @@ std::int32_t GetIndicesPairsPlugin::enqueue(
   void const * const * inputs, void * const * outputs, [[maybe_unused]] void * workspace,
   cudaStream_t stream) noexcept
 {
+  std::cout << "GetIndicesPairsPlugin::enqueue::start" << std::endl;
+
   using SpconvOps = spconvlib::spconv::csrc::sparse::all::SpconvOps;
   using StaticAllocator = spconvlib::spconv::csrc::sparse::alloc::StaticAllocator;
 
@@ -255,11 +257,11 @@ std::int32_t GetIndicesPairsPlugin::enqueue(
   // const int static_num_act_in = out_indices_num_limit_;
   const int num_act_in = input_desc[0].dims.d[0];
 
-  std::vector<int> ksize(params_.ksize.begin(), params_.ksize.end());
-  std::vector<int> stride(params_.stride.begin(), params_.stride.end());
-  std::vector<int> padding(params_.padding.begin(), params_.padding.end());
-  std::vector<int> dilation(params_.dilation.begin(), params_.dilation.end());
-  std::vector<int> input_dims(params_.spatial_shape.begin(), params_.spatial_shape.end());
+  std::vector<int32_t> ksize(params_.ksize.begin(), params_.ksize.end());
+  std::vector<int32_t> stride(params_.stride.begin(), params_.stride.end());
+  std::vector<int32_t> padding(params_.padding.begin(), params_.padding.end());
+  std::vector<int32_t> dilation(params_.dilation.begin(), params_.dilation.end());
+  std::vector<int32_t> input_dims(params_.spatial_shape.begin(), params_.spatial_shape.end());
 
   auto out_dims = SpconvOps::get_conv_output_size(input_dims, ksize, stride, padding, dilation);
   std::vector<std::int64_t> output_dims_i64(out_dims.begin(), out_dims.end());
@@ -291,10 +293,8 @@ std::int32_t GetIndicesPairsPlugin::enqueue(
   std::cout << "num_act_in: " << num_act_in << std::endl;
   std::cout << indices_kernel_num.numel() << std::endl;
 
-  // sleep 15s
-  std::this_thread::sleep_for(std::chrono::seconds(15));
-
-  indices_kernel_num = tv::zeros({kernel_volume}, tv::int32, 0);
+  // indices_kernel_num = tv::zeros({kernel_volume}, tv::int32, 0);
+  cudaMemsetAsync(indices_kernel_num.data_ptr(), 0, kernel_volume * sizeof(std::int32_t), stream);
 
   tv::Tensor out_inds =
     tv::from_blob(outputs[0], {is_subm ? num_act_in : out_indices_num_limit_, 4}, tv::int32, 0);
@@ -308,15 +308,55 @@ std::int32_t GetIndicesPairsPlugin::enqueue(
   StaticAllocator alloc(ws_tensors);
 
   int num_act_out_real = SpconvOps::get_indice_pairs(
-    alloc, input_indices, params_.batch_size, out_dims,
+    alloc, input_indices, params_.batch_size, is_subm ? input_dims : out_dims,
     static_cast<int>(tv::gemm::SparseConvAlgo::kNative), ksize, stride, padding, dilation,
     {0, 0, 0}, is_subm, false, reinterpret_cast<std::uintptr_t>(stream), out_indices_num_limit_,
     num_act_in);
+
+  if (is_subm) {
+    cudaMemcpyAsync(
+      outputs[0], inputs[0], num_act_in * 4 * sizeof(std::int32_t), cudaMemcpyDeviceToDevice,
+      stream);
+  }
 
   std::int32_t * num_act_out_data = static_cast<std::int32_t *>(outputs[3]);
 
   cudaError_t const status = cudaMemcpyAsync(
     num_act_out_data, &num_act_out_real, sizeof(std::int32_t), cudaMemcpyHostToDevice, stream);
+
+  /* std::vector<int32_t> pairs_host(
+    num_act_in * kernel_volume * 2);
+  std::vector<int32_t> pairs_num_host(kernel_volume);
+  cudaMemcpyAsync(
+    pairs_host.data(), outputs[1], num_act_in * kernel_volume * 2 * sizeof(int32_t),
+    cudaMemcpyDeviceToHost, stream);
+  cudaMemcpyAsync(
+    pairs_num_host.data(), outputs[2], kernel_volume * sizeof(int32_t),
+    cudaMemcpyDeviceToHost, stream);
+  cudaStreamSynchronize(stream); */
+
+  /* std::cout << "input_indices: \n" << input_indices.cpu().slice_first_axis(0,20) << std::endl; */
+  // std::cout << "pair: \n" << pair.cpu() << std::endl;
+  /* std::cout << "indices_kernel_num: \n" << indices_kernel_num.cpu() << std::endl;
+  std::cout << "out_inds: \n" << out_inds.cpu().slice_first_axis(0,20) << std::endl; */
+
+  /*  std::cout << "pairs_host: \n";
+   // print all the pairs
+   for (std::int32_t i = 0; i < std::min<std::int32_t>(num_act_in, 20); ++i) {
+     std::cout << pairs_host[i] << ", ";
+   }
+   std::cout << std::endl;
+
+   std::cout << "pairs_num_host: \n";
+   // print all the pairs_num
+   for (std::int32_t i = 0; i < std::min<std::int32_t>(kernel_volume, 20); ++i) {
+     std::cout << pairs_num_host[i] << ", ";
+   }
+   std::cout << std::endl;
+
+   std::cout << "num_act_out_real: " << num_act_out_real << std::endl; */
+
+  std::cout << "GetIndicesPairsPlugin::enqueue end" << std::endl;
 
   return status;
 }

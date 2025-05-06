@@ -47,63 +47,85 @@ nvinfer1::PluginFieldCollection const * SegmentCSRPluginCreator::getFieldNames()
 }
 
 IPluginV3 * SegmentCSRPluginCreator::createPlugin(
-  char const * name, PluginFieldCollection const * fc, TensorRTPhase phase) noexcept
+  char const * name, PluginFieldCollection const * fc,
+  [[maybe_unused]] TensorRTPhase phase) noexcept
 {
-  // The build phase and the deserialization phase are handled differently.
-  if (phase == TensorRTPhase::kBUILD || phase == TensorRTPhase::kRUNTIME) {
-    // The attributes from the ONNX node will be parsed and passed via fc.
-    try {
-      nvinfer1::PluginField const * fields{fc->fields};
-      std::int32_t num_fields{fc->nbFields};
+  try {
+    PLUGIN_VALIDATE(fc != nullptr);
+    PLUGIN_VALIDATE(fc->nbFields == 1);
+    PLUGIN_VALIDATE(std::string(fc->fields[0].name) == "reduce");
+    std::string reduce(static_cast<char const *>(fc->fields[0].data), fc->fields[0].length);
 
-      PLUGIN_VALIDATE(num_fields == 1);
-
-      SegmentCSRParameters parameters;
-
-      const std::string attr_name = fields[0].name;
-      const nvinfer1::PluginFieldType type = fields[0].type;
-
-      if (attr_name == "reduce") {
-        PLUGIN_VALIDATE(type == nvinfer1::PluginFieldType::kCHAR);
-        parameters.reduce = static_cast<char const *>(fields[0].data)[0];
-      }
-
-      // Log the attributes parsed from ONNX node.
-      std::stringstream ss;
-      ss << name << " plugin Attributes:";
-      logDebug(ss.str().c_str());
-
-      ss.str("");
-      ss << "reduce: " << parameters.reduce;
-
-      SegmentCSRPlugin * const plugin{new SegmentCSRPlugin{std::string(name), parameters}};
-      return plugin;
-    } catch (std::exception const & e) {
-      caughtError(e);
+    std::size_t null_pos = reduce.find('\0');
+    if (null_pos != std::string::npos) {
+      reduce.resize(null_pos);
     }
-    return nullptr;
-  } else if (phase == TensorRTPhase::kRUNTIME) {
-    // The attributes from the serialized plugin will be passed via fc.
-    try {
-      nvinfer1::PluginField const * fields{fc->fields};
-      std::int32_t num_fields{fc->nbFields};
-      PLUGIN_VALIDATE(num_fields == 1);
 
-      char const * attr_name = fields[0].name;
-      PLUGIN_VALIDATE(!strcmp(attr_name, "parameters"));
-      PLUGIN_VALIDATE(fields[0].type == nvinfer1::PluginFieldType::kUNKNOWN);
-      PLUGIN_VALIDATE(fields[0].length == sizeof(SegmentCSRParameters));
-      SegmentCSRParameters params{*(static_cast<SegmentCSRParameters const *>(fields[0].data))};
-
-      SegmentCSRPlugin * const plugin{new SegmentCSRPlugin{std::string(name), params}};
-      return plugin;
-    } catch (std::exception const & e) {
-      caughtError(e);
-    }
-    return nullptr;
-  } else {
-    return nullptr;
+    SegmentCSRPlugin * const plugin(new SegmentCSRPlugin(std::string(name), reduce));
+    return plugin;
+  } catch (std::exception & e) {
+    caughtError(e);
   }
+  return nullptr;
+
+  /*
+
+    // The build phase and the deserialization phase are handled differently.
+    if (phase == TensorRTPhase::kBUILD) {
+      // The attributes from the ONNX node will be parsed and passed via fc.
+      try {
+        nvinfer1::PluginField const * fields{fc->fields};
+        std::int32_t num_fields{fc->nbFields};
+
+        PLUGIN_VALIDATE(num_fields == 1);
+
+        SegmentCSRParameters parameters;
+
+        const std::string attr_name = fields[0].name;
+        const nvinfer1::PluginFieldType type = fields[0].type;
+
+        if (attr_name == "reduce") {
+          PLUGIN_VALIDATE(type == nvinfer1::PluginFieldType::kCHAR);
+          parameters.reduce = std::string(static_cast<char const *>(fields[0].data));
+        }
+
+        // Log the attributes parsed from ONNX node.
+        std::stringstream ss;
+        ss << name << " plugin Attributes:";
+        logDebug(ss.str().c_str());
+
+        ss.str("");
+        ss << "reduce: " << parameters.reduce;
+        logDebug(ss.str().c_str());
+
+        SegmentCSRPlugin * const plugin{new SegmentCSRPlugin{std::string(name), parameters}};
+        return plugin;
+      } catch (std::exception const & e) {
+        caughtError(e);
+      }
+      return nullptr;
+    } else if (phase == TensorRTPhase::kRUNTIME) {
+      // The attributes from the serialized plugin will be passed via fc.
+      try {
+        nvinfer1::PluginField const * fields{fc->fields};
+        std::int32_t num_fields{fc->nbFields};
+        PLUGIN_VALIDATE(num_fields == 1);
+
+        char const * attr_name = fields[0].name;
+        PLUGIN_VALIDATE(!strcmp(attr_name, "parameters"));
+        PLUGIN_VALIDATE(fields[0].type == nvinfer1::PluginFieldType::kUNKNOWN);
+        PLUGIN_VALIDATE(fields[0].length == sizeof(SegmentCSRParameters));
+        SegmentCSRParameters params{*(static_cast<SegmentCSRParameters const *>(fields[0].data))};
+
+        SegmentCSRPlugin * const plugin{new SegmentCSRPlugin{std::string(name), params}};
+        return plugin;
+      } catch (std::exception const & e) {
+        caughtError(e);
+      }
+      return nullptr;
+    } else {
+      return nullptr;
+    } */
 }
 
 }  // namespace nvinfer1::plugin

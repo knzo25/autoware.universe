@@ -29,7 +29,7 @@ namespace autoware::ptv3
 PTv3Node::PTv3Node(const rclcpp::NodeOptions & options) : Node("ptv3", options)
 {
   // sleep 10 to attach the debugger
-  // rclcpp::sleep_for(std::chrono::seconds(20));
+  rclcpp::sleep_for(std::chrono::seconds(20));
 
   auto descriptor = rcl_interfaces::msg::ParameterDescriptor{}.set__read_only(true);
 
@@ -99,6 +99,12 @@ PTv3Node::PTv3Node(const rclcpp::NodeOptions & options) : Node("ptv3", options)
     RCLCPP_INFO(this->get_logger(), "TensorRT engine was built. Shutting down the node.");
     rclcpp::shutdown();
   }
+
+  timer_ = this->create_wall_timer(std::chrono::milliseconds(10 * 1000), [this]() {
+    auto msg_ptr = std::make_unique<sensor_msgs::msg::PointCloud2>();
+    model_ptr_->fake_segment(*msg_ptr);
+    cloud_pub_->publish(std::move(msg_ptr));
+  });
 }
 
 void PTv3Node::cloudCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr pc_msg)

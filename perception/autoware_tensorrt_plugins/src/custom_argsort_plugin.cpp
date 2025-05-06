@@ -14,11 +14,13 @@
 
 #include "autoware/tensorrt_plugins/custom_argsort_plugin.hpp"
 
+#include "autoware/argsort_ops/argsort.hpp"
 #include "autoware/tensorrt_plugins/plugin_utils.hpp"
 
 #include <NvInferRuntime.h>
 #include <NvInferRuntimePlugin.h>
 
+#include <cassert>  // TODO(knzo25): delete this
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -26,6 +28,7 @@
 #include <exception>
 #include <functional>
 #include <iostream>  // TODO(knzo25): delete this
+#include <numeric>   // TODO(knzo25): delete this
 #include <string>
 #include <tuple>
 #include <vector>
@@ -154,13 +157,85 @@ std::int32_t CustomArgsortPlugin::enqueue(
   void const * const * inputs, void * const * outputs, [[maybe_unused]] void * workspace,
   cudaStream_t stream) noexcept
 {
-  std::cout << "CustomArgsortPlugin::enqueue" << std::endl;
+  const int num_test_samples = 20;
+  std::cout << "CustomArgsortPlugin::enqueue::start" << std::endl;
+
+  auto num_elements = static_cast<std::size_t>(input_desc[0].dims.d[0]);
+  if (max_num_elements_ < num_elements) {
+    max_num_elements_ = num_elements;
+    argsort_workspace_size_ = get_argsort_workspace_size(max_num_elements_);
+  }
+
+  // cuda version start
+  argsort(
+    reinterpret_cast<std::int64_t const *>(inputs[0]), reinterpret_cast<std::int64_t *>(outputs[0]),
+    workspace, num_elements, argsort_workspace_size_, stream);
+
+  std::vector<std::int64_t> cuda_result_host(num_elements);
+  cudaMemcpyAsync(
+    cuda_result_host.data(), outputs[0], num_elements * sizeof(std::int64_t),
+    cudaMemcpyDeviceToHost, stream);
+  cudaStreamSynchronize(stream);
+  std::cout << "cuda_result_host: " << std::endl;
+  for (std::int32_t i = 0; i < num_test_samples; ++i) {
+    std::cout << cuda_result_host[i] << ", ";
+  }
+  std::cout << std::endl;
+
+  // cuda version end
+
+  // std::int64_t num_elements = input_desc[0].dims.d[0];
+  std::int64_t const * input_data_device_ptr = reinterpret_cast<std::int64_t const *>(inputs[0]);
+  std::int64_t * output_indices_device_ptr = reinterpret_cast<std::int64_t *>(outputs[0]);
+
+  std::vector<std::int64_t> input_data_host(num_elements);
+  std::vector<std::int64_t> output_indices_host(num_elements);
+
+  std::vector<std::int64_t> indices(num_elements);
+  std::iota(indices.begin(), indices.end(), 0);
+
+  cudaMemcpyAsync(
+    input_data_host.data(), input_data_device_ptr, num_elements * sizeof(std::int64_t),
+    cudaMemcpyDeviceToHost);
+
+  std::cout << "input_data: " << std::endl;
+  for (std::int32_t i = 0; i < num_test_samples; ++i) {
+    std::cout << input_data_host[i] << ", ";
+  }
+  std::cout << std::endl;
+
+  std::sort(indices.begin(), indices.end(), [&input_data_host](auto i1, auto i2) {
+    return input_data_host[i1] < input_data_host[i2];
+  });
+
+  std::cout << "output_data: " << std::endl;
+  for (std::int32_t i = 0; i < num_test_samples; ++i) {
+    std::cout << indices[i] << ", ";
+  }
+  std::cout << std::endl;
+
+  int different_elements = 0;
+  for (std::size_t i = 0; i < num_elements; ++i) {
+    if (indices[i] != cuda_result_host[i]) {
+      // std::cout << "different_elements: " << indices[i] << ", " << cuda_result_host[i] <<
+      // std::endl;
+      different_elements++;
+      assert(input_data_host[indices[i]] == input_data_host[cuda_result_host[i]]);
+    }
+  }
+
+  cudaMemcpyAsync(
+    output_indices_device_ptr, indices.data(), num_elements * sizeof(std::int64_t),
+    cudaMemcpyHostToDevice);
+
   (void)input_desc;
   (void)output_desc;
   (void)inputs;
   (void)outputs;
   (void)workspace;
   (void)stream;
+
+  std::cout << "CustomArgsortPlugin::enqueue::end" << std::endl;
 
   return 0;
 }
@@ -188,7 +263,9 @@ std::size_t CustomArgsortPlugin::getWorkspaceSize(
   [[maybe_unused]] DynamicPluginTensorDesc const * outputs,
   [[maybe_unused]] std::int32_t num_outputs) const noexcept
 {
-  return 0;
+  int64_t max_num_elements = inputs[0].max.d[0];
+  return get_argsort_workspace_size(max_num_elements) +
+         sizeof(std::int64_t) * 2 * (max_num_elements + 1);
 }
 
 }  // namespace nvinfer1::plugin

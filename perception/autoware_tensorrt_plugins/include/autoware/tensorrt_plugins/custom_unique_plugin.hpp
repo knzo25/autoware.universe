@@ -103,10 +103,12 @@ private:
   void initFieldsToSerialize();
 
   // upper bound of number of output indices. needed to bound memory usage.
-  static constexpr int out_indices_num_limit_{256000};
+  // static constexpr int out_indices_num_limit_{256000};
 
   std::string layer_name_;
   CustomUniqueParameters params_;
+  std::size_t workspace_size_{0};
+  std::size_t max_num_elements_{0};
   std::vector<nvinfer1::PluginField> data_to_serialize_;
   nvinfer1::PluginFieldCollection fc_to_serialize_;
 };

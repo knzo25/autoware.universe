@@ -23,6 +23,10 @@
 #include <autoware/universe_utils/math/constants.hpp>
 #include <rclcpp/rclcpp.hpp>
 
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <sensor_msgs/msg/point_field.hpp>
+#include <sensor_msgs/point_cloud2_iterator.hpp>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -61,7 +65,7 @@ void loadIntegers(const std::string & filename, std::vector<int64_t> & integers)
   }
 }
 
-void loadFloats(const std::string & filename, std::vector<double> & floats)
+void loadFloats(const std::string & filename, std::vector<float> & floats)
 {
   std::ifstream infile(filename);
   if (!infile.is_open()) {
@@ -73,13 +77,26 @@ void loadFloats(const std::string & filename, std::vector<double> & floats)
     if (line.empty()) continue;
 
     char * endptr = nullptr;
-    double value = std::strtod(line.c_str(), &endptr);
+    float value = std::strtof(line.c_str(), &endptr);
 
     if (endptr != nullptr && *endptr == '\0') {
       floats.push_back(value);
     } else {
       // Not a valid float line, skip
     }
+  }
+}
+
+void writeIntegers(std::string const & file_name, const std::vector<std::int64_t> & data)
+{
+  std::ofstream file(file_name);
+  if (file.is_open()) {
+    for (const auto & value : data) {
+      file << value << "\n";
+    }
+    file.close();
+  } else {
+    std::cerr << "Unable to open file: " << file_name << std::endl;
   }
 }
 
@@ -92,6 +109,8 @@ PTv3TRT::PTv3TRT(const tensorrt_common::TrtCommonConfig & trt_config, const PTv3
   stop_watch_ptr_ =
     std::make_unique<autoware::universe_utils::StopWatch<std::chrono::milliseconds>>();
   stop_watch_ptr_->tic("processing/inner");
+
+  // network_trt_ptr->setTensorDataType("feat", nvinfer1::DataType::kFLOAT);
 
   initPtr();
   initTrt(trt_config);
@@ -110,9 +129,12 @@ PTv3TRT::PTv3TRT(const tensorrt_common::TrtCommonConfig & trt_config, const PTv3
   network_io.emplace_back("serialized_inverse", nvinfer1::Dims{2, {2, -1}});
 
    */
+}
 
-  std::vector<double> coord_host;
-  std::vector<double> feat_host;
+bool PTv3TRT::fake_segment(sensor_msgs::msg::PointCloud2 & out_msg)
+{
+  std::vector<float> coord_host;
+  std::vector<float> feat_host;
 
   std::vector<std::int64_t> grid_coord;
   std::vector<std::int64_t> serialized_code;
@@ -129,6 +151,19 @@ PTv3TRT::PTv3TRT(const tensorrt_common::TrtCommonConfig & trt_config, const PTv3
   std::int64_t num_voxels = feat_host.size() / 4;
   std::cout << "num_voxels: " << num_voxels << std::endl;
 
+  int num_samples = 20;
+  int num_features = 4;
+  std::cout << "loaded feat: " << std::endl;
+  for (std::int64_t i = 0; i < num_samples; ++i) {
+    std::cout << "[";
+    for (std::int64_t j = 0; j < num_features; ++j) {
+      std::cout << feat_host[i * num_features + j] << ", ";
+    }
+    std::cout << "]" << std::endl;
+  }
+
+  std::vector<float> test_input(4 * num_voxels);
+
   assert(static_cast<std::int64_t>(coord_host.size()) == num_voxels * 3);
   assert(static_cast<std::int64_t>(feat_host.size()) == num_voxels * 4);
   assert(static_cast<std::int64_t>(grid_coord.size()) == num_voxels * 3);
@@ -141,6 +176,12 @@ PTv3TRT::PTv3TRT(const tensorrt_common::TrtCommonConfig & trt_config, const PTv3
   CHECK_CUDA_ERROR(cudaMemcpyAsync(
     feat_d_.get(), feat_host.data(), num_voxels * 4 * sizeof(float), cudaMemcpyHostToDevice,
     stream_));
+
+  CHECK_CUDA_ERROR(cudaMemcpyAsync(
+    test_input.data(), feat_d_.get(), num_voxels * 4 * sizeof(float), cudaMemcpyDeviceToHost,
+    stream_));
+  cudaStreamSynchronize(stream_);
+
   CHECK_CUDA_ERROR(cudaMemcpyAsync(
     grid_coord_d_.get(), grid_coord.data(), num_voxels * 3 * sizeof(std::int64_t),
     cudaMemcpyHostToDevice, stream_));
@@ -154,6 +195,11 @@ PTv3TRT::PTv3TRT(const tensorrt_common::TrtCommonConfig & trt_config, const PTv3
     serialized_inverse_d_.get(), serialized_inverse.data(), num_voxels * 2 * sizeof(std::int64_t),
     cudaMemcpyHostToDevice, stream_));
 
+  CHECK_CUDA_ERROR(cudaMemcpyAsync(
+    test_input.data(), feat_d_.get(), num_voxels * 4 * sizeof(float), cudaMemcpyDeviceToHost,
+    stream_));
+  cudaStreamSynchronize(stream_);
+
   network_trt_ptr_->setInputShape("coord", nvinfer1::Dims{2, {num_voxels, 3}});
   network_trt_ptr_->setInputShape("grid_coord", nvinfer1::Dims{2, {num_voxels, 3}});
   /* network_trt_ptr_->setInputShape(
@@ -163,7 +209,92 @@ PTv3TRT::PTv3TRT(const tensorrt_common::TrtCommonConfig & trt_config, const PTv3
   network_trt_ptr_->setInputShape("serialized_order", nvinfer1::Dims{2, {2, num_voxels}});
   network_trt_ptr_->setInputShape("serialized_inverse", nvinfer1::Dims{2, {2, num_voxels}});
 
+  CHECK_CUDA_ERROR(cudaMemcpyAsync(
+    test_input.data(), feat_d_.get(), num_voxels * 4 * sizeof(float), cudaMemcpyDeviceToHost,
+    stream_));
+  cudaStreamSynchronize(stream_);
+
   this->inference();
+
+  std::vector<std::int64_t> label_pred_output_host(num_voxels);
+  CHECK_CUDA_ERROR(cudaMemcpyAsync(
+    label_pred_output_host.data(), label_pred_output_d_.get(), num_voxels * sizeof(std::int64_t),
+    cudaMemcpyDeviceToHost, stream_));
+  cudaStreamSynchronize(stream_);
+  writeIntegers("label_pred_output.txt", label_pred_output_host);
+  std::cout << "Inference succeeded !" << std::endl << std::flush;
+
+  out_msg.header.frame_id = "base_link";
+  out_msg.height = 1;
+  out_msg.width = num_voxels;
+
+  sensor_msgs::PointCloud2Modifier modifier(out_msg);
+  modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
+  modifier.resize(out_msg.width * out_msg.height);
+
+  sensor_msgs::PointCloud2Iterator<float> iter_x(out_msg, "x");
+  sensor_msgs::PointCloud2Iterator<float> iter_y(out_msg, "y");
+  sensor_msgs::PointCloud2Iterator<float> iter_z(out_msg, "z");
+  sensor_msgs::PointCloud2Iterator<float> iter_rgb(out_msg, "rgb");
+
+  for (int voxel_idx = 0; voxel_idx < num_voxels; ++voxel_idx) {
+    float x = feat_host[voxel_idx * 4 + 0];
+    float y = feat_host[voxel_idx * 4 + 1];
+    float z = feat_host[voxel_idx * 4 + 2];
+
+    *iter_x = x;
+    *iter_y = y;
+    *iter_z = z;
+
+    uint8_t r, g, b;
+
+    switch (label_pred_output_host[voxel_idx]) {
+      case 0:
+        r = 255;
+        g = 0;
+        b = 0;
+        break;
+      case 1:
+        r = 0;
+        g = 255;
+        b = 0;
+        break;
+      case 2:
+        r = 0;
+        g = 0;
+        b = 255;
+        break;
+      case 3:
+        r = 255;
+        g = 0;
+        b = 255;
+        break;
+      case 4:
+        r = 0;
+        g = 255;
+        b = 255;
+        break;
+      case 5:
+        r = 255;
+        g = 255;
+        b = 255;
+        break;
+      default:
+        r = 255;
+        g = 255;
+        b = 255;
+    }
+
+    uint32_t rgb = (r << 16) | (g << 8) | b;
+    *iter_rgb = *reinterpret_cast<float *>(&rgb);  // pack into float
+
+    ++iter_x;
+    ++iter_y;
+    ++iter_z;
+    ++iter_rgb;
+  }
+
+  return true;
 }
 
 PTv3TRT::~PTv3TRT()
