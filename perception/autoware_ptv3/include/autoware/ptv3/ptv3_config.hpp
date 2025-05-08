@@ -95,12 +95,6 @@ public:
   std::int64_t grid_y_size_{};
   std::int64_t grid_z_size_{};
 
-  // Camera branch parameters
-  std::vector<float> d_bound_{};
-  std::vector<float> x_bound_{};
-  std::vector<float> y_bound_{};
-  std::vector<float> z_bound_{};
-
   ///// RUNTIME DIMENSIONS /////
   std::array<std::int64_t, 3> voxels_num_{};
 };

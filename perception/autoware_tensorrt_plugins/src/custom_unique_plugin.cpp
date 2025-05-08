@@ -231,7 +231,7 @@ std::int32_t CustomUniquePlugin::enqueue(
   }
   std::cout << std::endl;
 
-  write_vector_to_text_file(layer_name2 + "_input_data.txt", input_data);
+  /* write_vector_to_text_file(layer_name2 + "_input_data.txt", input_data); */
 
   std::vector<std::int64_t> unique_data;
   std::vector<std::int64_t> unique_data_counts;

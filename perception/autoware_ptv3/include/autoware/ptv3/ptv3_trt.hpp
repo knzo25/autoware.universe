@@ -103,13 +103,13 @@ protected:
 
   // lidar buffers
   CudaUniquePtr<float[]> points_d_{nullptr};
-  CudaUniquePtr<float[]> coord_d_{nullptr};
+  // CudaUniquePtr<float[]> coord_d_{nullptr};
   CudaUniquePtr<std::int64_t[]> grid_coord_d_{nullptr};
-  CudaUniquePtr<std::int64_t> offset_d_{nullptr};
+  // CudaUniquePtr<std::int64_t> offset_d_{nullptr};
   CudaUniquePtr<float[]> feat_d_{nullptr};
   CudaUniquePtr<std::int64_t[]> serialized_code_d_{nullptr};
-  CudaUniquePtr<std::int64_t[]> serialized_order_d_{nullptr};
-  CudaUniquePtr<std::int64_t[]> serialized_inverse_d_{nullptr};
+  /* CudaUniquePtr<std::int64_t[]> serialized_order_d_{nullptr};
+  CudaUniquePtr<std::int64_t[]> serialized_inverse_d_{nullptr}; */
 
   CudaUniquePtr<std::int64_t[]> label_pred_output_d_{nullptr};
 };

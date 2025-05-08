@@ -36,6 +36,7 @@
 #include "autoware/ptv3/utils.hpp"
 
 #include <autoware/cuda_utils/cuda_check_error.hpp>
+#include <autoware/cuda_utils/cuda_unique_ptr.hpp>
 
 #include <cuda_runtime_api.h>
 #include <tensorview/tensor.h>
@@ -51,21 +52,44 @@ class PreprocessCuda
 public:
   PreprocessCuda(const PTv3Config & config, cudaStream_t stream, bool allocate_buffers);
 
-  cudaError_t generateSweepPoints_launch(
+  /* cudaError_t generateSweepPoints_launch(
     const InputPointType * input_data, std::size_t points_size, float time_lag,
     const float * transform, float * output_points);
 
   std::size_t generateVoxels(
     const float * points, unsigned int points_size, float * voxel_features,
-    std::int32_t * voxel_coords, std::int32_t * num_points_per_voxel);
+    std::int32_t * voxel_coords, std::int32_t * num_points_per_voxel); */
+
+  std::size_t generateFeatures(
+    const InputPointType * input_data, unsigned int num_points, float * voxel_features,
+    std::int64_t * voxel_coords, std::int64_t * voxel_hashes, std::uint64_t * precomputed_hashes);
+
+  void computeSerializationCodes(
+    std::int64_t * voxel_hashes, std::int64_t * voxel_coords, int num_points);
 
 private:
   PTv3Config config_;
   cudaStream_t stream_;
 
-  tv::Tensor hash_key_value_;
-  tv::Tensor point_indices_data_;
-  tv::Tensor points_voxel_id_;
+  autoware::cuda_utils::CudaUniquePtr<float[]> points_d_{nullptr};
+  autoware::cuda_utils::CudaUniquePtr<float[]> cropped_points_d_{nullptr};
+  autoware::cuda_utils::CudaUniquePtr<std::uint32_t[]> crop_mask_d_{nullptr};
+  autoware::cuda_utils::CudaUniquePtr<std::uint32_t[]> crop_indices_d_{nullptr};
+
+  // Consider deleting this
+  autoware::cuda_utils::CudaUniquePtr<std::int32_t[]> voxelization_coords_d_{nullptr};
+
+  autoware::cuda_utils::CudaUniquePtr<std::uint64_t[]> hashes_d_{nullptr};
+  autoware::cuda_utils::CudaUniquePtr<std::uint64_t[]> sorted_hashes_d_{nullptr};
+
+  autoware::cuda_utils::CudaUniquePtr<std::uint64_t[]> hash_indexes_d_{nullptr};
+  autoware::cuda_utils::CudaUniquePtr<std::uint64_t[]> sorted_hash_indexes_d_{nullptr};
+
+  autoware::cuda_utils::CudaUniquePtr<std::uint64_t[]> unique_mask_d_{nullptr};
+  autoware::cuda_utils::CudaUniquePtr<std::uint64_t[]> unique_indices_d_{nullptr};
+
+  autoware::cuda_utils::CudaUniquePtr<std::uint8_t[]> sort_workspace_d_{nullptr};
+  std::size_t sort_workspace_size_{0};
 };
 }  // namespace autoware::ptv3
 

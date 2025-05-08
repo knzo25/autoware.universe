@@ -65,6 +65,28 @@ void loadIntegers(const std::string & filename, std::vector<int64_t> & integers)
   }
 }
 
+void loadIntegers(const std::string & filename, std::vector<uint64_t> & integers)
+{
+  std::ifstream infile(filename);
+  if (!infile.is_open()) {
+    throw std::runtime_error("Failed to open file: " + filename);
+  }
+
+  std::string line;
+  while (std::getline(infile, line)) {
+    if (line.empty()) continue;
+
+    char * endptr = nullptr;
+    uint64_t value = std::strtoull(line.c_str(), &endptr, 10);
+
+    if (endptr != nullptr && *endptr == '\0') {
+      integers.push_back(value);
+    } else {
+      // Not a valid integer line, skip
+    }
+  }
+}
+
 void loadFloats(const std::string & filename, std::vector<float> & floats)
 {
   std::ifstream infile(filename);
@@ -133,22 +155,77 @@ PTv3TRT::PTv3TRT(const tensorrt_common::TrtCommonConfig & trt_config, const PTv3
 
 bool PTv3TRT::fake_segment(sensor_msgs::msg::PointCloud2 & out_msg)
 {
-  std::vector<float> coord_host;
-  std::vector<float> feat_host;
+  std::vector<float> voxelized_feat_host;
+  std::vector<std::int64_t> voxelized_grid_coord_host;
+  std::vector<std::int64_t> serialized_code_host;
+  /* std::vector<std::int64_t> serialized_order;
+  std::vector<std::int64_t> serialized_inverse; */
 
-  std::vector<std::int64_t> grid_coord;
-  std::vector<std::int64_t> serialized_code;
-  std::vector<std::int64_t> serialized_order;
-  std::vector<std::int64_t> serialized_inverse;
+  std::vector<std::uint64_t> precomputed_hashes_host;
 
-  loadFloats("coord.txt", coord_host);
-  loadFloats("feat.txt", feat_host);
-  loadIntegers("grid_coord.txt", grid_coord);
-  loadIntegers("serialized_code.txt", serialized_code);
-  loadIntegers("serialized_order.txt", serialized_order);
-  loadIntegers("serialized_inverse.txt", serialized_inverse);
+  std::vector<float> raw_feat_host;
+  std::vector<std::int64_t> raw_grid_coord_host;
 
-  std::int64_t num_voxels = feat_host.size() / 4;
+  loadFloats("voxelized_feat.txt", voxelized_feat_host);
+  loadIntegers("voxelized_grid_coord.txt", voxelized_grid_coord_host);
+  loadIntegers("serialized_code.txt", serialized_code_host);
+  // loadIntegers("serialized_order.txt", serialized_order);
+  // loadIntegers("serialized_inverse.txt", serialized_inverse);
+
+  loadFloats("raw_feat.txt", raw_feat_host);
+  loadIntegers("raw_grid_coord.txt", raw_grid_coord_host);
+  /* loadFloats("voxelized_feat.txt", raw_feat_host);
+  loadIntegers("voxelized_grid_coord.txt", raw_grid_coord_host); */
+
+  loadIntegers("voxelization_hash.txt", precomputed_hashes_host);
+
+  // Start test
+  std::vector<InputPointType> input_points_host;
+  input_points_host.resize(raw_feat_host.size() / 4);
+
+  // create arange vector
+  std::vector<std::int64_t> arange(raw_feat_host.size() / 4);
+  std::iota(arange.begin(), arange.end(), 0);
+
+  // random permutation
+  std::srand(static_cast<unsigned int>(std::time(nullptr)));
+  std::random_shuffle(arange.begin(), arange.end());
+
+  for (std::size_t input_index = 0; input_index < input_points_host.size(); ++input_index) {
+    auto output_index = arange[input_index];
+
+    input_points_host[output_index].x = raw_feat_host[input_index * 4 + 0];
+    input_points_host[output_index].y = raw_feat_host[input_index * 4 + 1];
+    input_points_host[output_index].z = raw_feat_host[input_index * 4 + 2];
+    input_points_host[output_index].intensity =
+      static_cast<std::uint8_t>(255.f * raw_feat_host[input_index * 4 + 3]);
+  }
+
+  InputPointType * input_points_device = nullptr;
+  CHECK_CUDA_ERROR(cudaMalloc(
+    reinterpret_cast<void **>(&input_points_device),
+    input_points_host.size() * sizeof(InputPointType)));
+  CHECK_CUDA_ERROR(cudaMemcpyAsync(
+    input_points_device, input_points_host.data(),
+    input_points_host.size() * sizeof(InputPointType), cudaMemcpyHostToDevice, stream_));
+
+  auto num_unique_voxels = pre_ptr_->generateFeatures(
+    input_points_device, input_points_host.size(), feat_d_.get(), grid_coord_d_.get(),
+    serialized_code_d_.get(), precomputed_hashes_host.data());
+
+  std::int64_t num_voxels = static_cast<std::int64_t>(num_unique_voxels);
+
+  network_trt_ptr_->setInputShape("grid_coord", nvinfer1::Dims{2, {num_voxels, 3}});
+  network_trt_ptr_->setInputShape("feat", nvinfer1::Dims{2, {num_voxels, 4}});
+  network_trt_ptr_->setInputShape("serialized_code", nvinfer1::Dims{2, {2, num_voxels}});
+
+  cudaStreamSynchronize(stream_);
+  this->inference();
+  cudaStreamSynchronize(stream_);
+
+  // End test
+
+  /* std::int64_t num_voxels = voxelized_feat_host.size() / 4;
   std::cout << "num_voxels: " << num_voxels << std::endl;
 
   int num_samples = 20;
@@ -157,25 +234,20 @@ bool PTv3TRT::fake_segment(sensor_msgs::msg::PointCloud2 & out_msg)
   for (std::int64_t i = 0; i < num_samples; ++i) {
     std::cout << "[";
     for (std::int64_t j = 0; j < num_features; ++j) {
-      std::cout << feat_host[i * num_features + j] << ", ";
+      std::cout << voxelized_feat_host[i * num_features + j] << ", ";
     }
     std::cout << "]" << std::endl;
   }
 
   std::vector<float> test_input(4 * num_voxels);
 
-  assert(static_cast<std::int64_t>(coord_host.size()) == num_voxels * 3);
-  assert(static_cast<std::int64_t>(feat_host.size()) == num_voxels * 4);
-  assert(static_cast<std::int64_t>(grid_coord.size()) == num_voxels * 3);
-  assert(static_cast<std::int64_t>(serialized_code.size()) == num_voxels * 2);
-  assert(static_cast<std::int64_t>(serialized_order.size()) == num_voxels * 2);
-  assert(static_cast<std::int64_t>(serialized_inverse.size()) == num_voxels * 2);
+  assert(static_cast<std::int64_t>(voxelized_feat_host.size()) == num_voxels * 4);
+  assert(static_cast<std::int64_t>(voxelized_grid_coord_host.size()) == num_voxels * 3);
+  assert(static_cast<std::int64_t>(serialized_code_host.size()) == num_voxels * 2);
+
   CHECK_CUDA_ERROR(cudaMemcpyAsync(
-    coord_d_.get(), coord_host.data(), num_voxels * 3 * sizeof(float), cudaMemcpyHostToDevice,
-    stream_));
-  CHECK_CUDA_ERROR(cudaMemcpyAsync(
-    feat_d_.get(), feat_host.data(), num_voxels * 4 * sizeof(float), cudaMemcpyHostToDevice,
-    stream_));
+    feat_d_.get(), voxelized_feat_host.data(), num_voxels * 4 * sizeof(float),
+  cudaMemcpyHostToDevice, stream_));
 
   CHECK_CUDA_ERROR(cudaMemcpyAsync(
     test_input.data(), feat_d_.get(), num_voxels * 4 * sizeof(float), cudaMemcpyDeviceToHost,
@@ -183,16 +255,10 @@ bool PTv3TRT::fake_segment(sensor_msgs::msg::PointCloud2 & out_msg)
   cudaStreamSynchronize(stream_);
 
   CHECK_CUDA_ERROR(cudaMemcpyAsync(
-    grid_coord_d_.get(), grid_coord.data(), num_voxels * 3 * sizeof(std::int64_t),
+    grid_coord_d_.get(), voxelized_grid_coord_host.data(), num_voxels * 3 * sizeof(std::int64_t),
     cudaMemcpyHostToDevice, stream_));
   CHECK_CUDA_ERROR(cudaMemcpyAsync(
-    serialized_code_d_.get(), serialized_code.data(), num_voxels * 2 * sizeof(std::int64_t),
-    cudaMemcpyHostToDevice, stream_));
-  CHECK_CUDA_ERROR(cudaMemcpyAsync(
-    serialized_order_d_.get(), serialized_order.data(), num_voxels * 2 * sizeof(std::int64_t),
-    cudaMemcpyHostToDevice, stream_));
-  CHECK_CUDA_ERROR(cudaMemcpyAsync(
-    serialized_inverse_d_.get(), serialized_inverse.data(), num_voxels * 2 * sizeof(std::int64_t),
+    serialized_code_d_.get(), serialized_code_host.data(), num_voxels * 2 * sizeof(std::int64_t),
     cudaMemcpyHostToDevice, stream_));
 
   CHECK_CUDA_ERROR(cudaMemcpyAsync(
@@ -200,21 +266,31 @@ bool PTv3TRT::fake_segment(sensor_msgs::msg::PointCloud2 & out_msg)
     stream_));
   cudaStreamSynchronize(stream_);
 
-  network_trt_ptr_->setInputShape("coord", nvinfer1::Dims{2, {num_voxels, 3}});
   network_trt_ptr_->setInputShape("grid_coord", nvinfer1::Dims{2, {num_voxels, 3}});
-  /* network_trt_ptr_->setInputShape(
-    "offset", nvinfer1::Dims{1, {1}}); */
   network_trt_ptr_->setInputShape("feat", nvinfer1::Dims{2, {num_voxels, 4}});
   network_trt_ptr_->setInputShape("serialized_code", nvinfer1::Dims{2, {2, num_voxels}});
-  network_trt_ptr_->setInputShape("serialized_order", nvinfer1::Dims{2, {2, num_voxels}});
-  network_trt_ptr_->setInputShape("serialized_inverse", nvinfer1::Dims{2, {2, num_voxels}});
 
   CHECK_CUDA_ERROR(cudaMemcpyAsync(
     test_input.data(), feat_d_.get(), num_voxels * 4 * sizeof(float), cudaMemcpyDeviceToHost,
     stream_));
   cudaStreamSynchronize(stream_);
 
-  this->inference();
+  pre_ptr_->computeSerializationCodes(
+    serialized_code_d_.get(), grid_coord_d_.get(), num_voxels);
+
+  CHECK_CUDA_ERROR(cudaStreamSynchronize(stream_));
+
+  std::vector<std::int64_t> serialized_code_host_test(num_voxels * 2);
+  CHECK_CUDA_ERROR(cudaMemcpyAsync(
+    serialized_code_host_test.data(), serialized_code_d_.get(), num_voxels * 2 *
+  sizeof(std::int64_t), cudaMemcpyDeviceToHost, stream_)); cudaStreamSynchronize(stream_);
+
+  // Check that the computed serialized codes match the expected values
+  for (std::int64_t i = 0; i < 2*num_voxels; ++i) {
+    assert(serialized_code_host_test[i] == serialized_code_host[i]);
+  }
+
+  this->inference(); */
 
   std::vector<std::int64_t> label_pred_output_host(num_voxels);
   CHECK_CUDA_ERROR(cudaMemcpyAsync(
@@ -230,6 +306,7 @@ bool PTv3TRT::fake_segment(sensor_msgs::msg::PointCloud2 & out_msg)
 
   sensor_msgs::PointCloud2Modifier modifier(out_msg);
   modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
+
   modifier.resize(out_msg.width * out_msg.height);
 
   sensor_msgs::PointCloud2Iterator<float> iter_x(out_msg, "x");
@@ -238,9 +315,9 @@ bool PTv3TRT::fake_segment(sensor_msgs::msg::PointCloud2 & out_msg)
   sensor_msgs::PointCloud2Iterator<float> iter_rgb(out_msg, "rgb");
 
   for (int voxel_idx = 0; voxel_idx < num_voxels; ++voxel_idx) {
-    float x = feat_host[voxel_idx * 4 + 0];
-    float y = feat_host[voxel_idx * 4 + 1];
-    float z = feat_host[voxel_idx * 4 + 2];
+    float x = voxelized_feat_host[voxel_idx * 4 + 0];
+    float y = voxelized_feat_host[voxel_idx * 4 + 1];
+    float z = voxelized_feat_host[voxel_idx * 4 + 2];
 
     *iter_x = x;
     *iter_y = y;
@@ -315,16 +392,15 @@ void PTv3TRT::initPtr()
   points_d_ = autoware::cuda_utils::make_unique<float[]>(
     config_.cloud_capacity_ * config_.num_point_feature_size_);
 
-  coord_d_ = autoware::cuda_utils::make_unique<float[]>(config_.max_num_voxels_ * 3);
   grid_coord_d_ = autoware::cuda_utils::make_unique<std::int64_t[]>(config_.max_num_voxels_ * 3);
   /* offset_d_ = autoware::cuda_utils::make_unique<std::int64_t>(); */
   feat_d_ = autoware::cuda_utils::make_unique<float[]>(config_.max_num_voxels_ * 4);
   serialized_code_d_ =
     autoware::cuda_utils::make_unique<std::int64_t[]>(config_.max_num_voxels_ * 2);
-  serialized_order_d_ =
+  /* serialized_order_d_ =
     autoware::cuda_utils::make_unique<std::int64_t[]>(config_.max_num_voxels_ * 2);
   serialized_inverse_d_ =
-    autoware::cuda_utils::make_unique<std::int64_t[]>(config_.max_num_voxels_ * 2);
+    autoware::cuda_utils::make_unique<std::int64_t[]>(config_.max_num_voxels_ * 2); */
   label_pred_output_d_ = autoware::cuda_utils::make_unique<std::int64_t[]>(config_.max_num_voxels_);
 
   pre_ptr_ = std::make_unique<PreprocessCuda>(config_, stream_, true);
@@ -337,23 +413,24 @@ void PTv3TRT::initTrt(const tensorrt_common::TrtCommonConfig & trt_config)
 
   // Lidar branch
 
-  network_io.emplace_back("coord", nvinfer1::Dims{2, {-1, 3}});
+  // network_io.emplace_back("coord", nvinfer1::Dims{2, {-1, 3}});
   network_io.emplace_back("grid_coord", nvinfer1::Dims{2, {-1, 3}});
   /* network_io.emplace_back("offset", nvinfer1::Dims{1, {1}}); */
   network_io.emplace_back("feat", nvinfer1::Dims{2, {-1, 4}});
 
   network_io.emplace_back("serialized_code", nvinfer1::Dims{2, {2, -1}});
-  network_io.emplace_back("serialized_order", nvinfer1::Dims{2, {2, -1}});
-  network_io.emplace_back("serialized_inverse", nvinfer1::Dims{2, {2, -1}});
+  /* network_io.emplace_back("serialized_order", nvinfer1::Dims{2, {2, -1}});
+  network_io.emplace_back("serialized_inverse", nvinfer1::Dims{2, {2, -1}}); */
 
   // Outputs
   network_io.emplace_back("seg", nvinfer1::Dims{1, {-1}});
 
   std::vector<autoware::tensorrt_common::ProfileDims> profile_dims;
 
-  profile_dims.emplace_back(
-    "coord", nvinfer1::Dims{2, {config_.voxels_num_[0], 3}},
-    nvinfer1::Dims{2, {config_.voxels_num_[1], 3}}, nvinfer1::Dims{2, {config_.voxels_num_[2], 3}});
+  // profile_dims.emplace_back(
+  //   "coord", nvinfer1::Dims{2, {config_.voxels_num_[0], 3}},
+  //   nvinfer1::Dims{2, {config_.voxels_num_[1], 3}}, nvinfer1::Dims{2, {config_.voxels_num_[2],
+  //   3}});
 
   profile_dims.emplace_back(
     "grid_coord", nvinfer1::Dims{2, {config_.voxels_num_[0], 3}},
@@ -373,13 +450,14 @@ void PTv3TRT::initTrt(const tensorrt_common::TrtCommonConfig & trt_config)
     "serialized_code", nvinfer1::Dims{2, {2, config_.voxels_num_[0]}},
     nvinfer1::Dims{2, {2, config_.voxels_num_[1]}}, nvinfer1::Dims{2, {2, config_.voxels_num_[2]}});
 
-  profile_dims.emplace_back(
+  /* profile_dims.emplace_back(
     "serialized_order", nvinfer1::Dims{2, {2, config_.voxels_num_[0]}},
     nvinfer1::Dims{2, {2, config_.voxels_num_[1]}}, nvinfer1::Dims{2, {2, config_.voxels_num_[2]}});
 
   profile_dims.emplace_back(
     "serialized_inverse", nvinfer1::Dims{2, {2, config_.voxels_num_[0]}},
     nvinfer1::Dims{2, {2, config_.voxels_num_[1]}}, nvinfer1::Dims{2, {2, config_.voxels_num_[2]}});
+*/
 
   auto network_io_ptr =
     std::make_unique<std::vector<autoware::tensorrt_common::NetworkIO>>(network_io);
@@ -406,13 +484,13 @@ void PTv3TRT::initTrt(const tensorrt_common::TrtCommonConfig & trt_config)
             << std::endl
             << std::flush;
 
-  network_trt_ptr_->setTensorAddress("coord", coord_d_.get());
+  // network_trt_ptr_->setTensorAddress("coord", coord_d_.get());
   network_trt_ptr_->setTensorAddress("grid_coord", grid_coord_d_.get());
   /* network_trt_ptr_->setTensorAddress("offset", offset_d_.get()); */
   network_trt_ptr_->setTensorAddress("feat", feat_d_.get());
   network_trt_ptr_->setTensorAddress("serialized_code", serialized_code_d_.get());
-  network_trt_ptr_->setTensorAddress("serialized_order", serialized_order_d_.get());
-  network_trt_ptr_->setTensorAddress("serialized_inverse", serialized_inverse_d_.get());
+  /* network_trt_ptr_->setTensorAddress("serialized_order", serialized_order_d_.get());
+  network_trt_ptr_->setTensorAddress("serialized_inverse", serialized_inverse_d_.get()); */
 
   network_trt_ptr_->setTensorAddress("seg", label_pred_output_d_.get());
 }
@@ -498,14 +576,14 @@ bool PTv3TRT::preProcess(const sensor_msgs::msg::PointCloud2::ConstSharedPtr & p
     num_voxels = config_.max_num_voxels_;
   }
 
-  network_trt_ptr_->setInputShape("coord", nvinfer1::Dims{2, {num_voxels, 3}});
+  // network_trt_ptr_->setInputShape("coord", nvinfer1::Dims{2, {num_voxels, 3}});
   network_trt_ptr_->setInputShape("grid_coord", nvinfer1::Dims{2, {num_voxels, 3}});
   /* network_trt_ptr_->setInputShape(
     "offset", nvinfer1::Dims{1, {1}}); */
   network_trt_ptr_->setInputShape("feat", nvinfer1::Dims{2, {num_voxels, 4}});
   network_trt_ptr_->setInputShape("serialized_code", nvinfer1::Dims{2, {2, num_voxels}});
-  network_trt_ptr_->setInputShape("serialized_order", nvinfer1::Dims{2, {2, num_voxels}});
-  network_trt_ptr_->setInputShape("serialized_inverse", nvinfer1::Dims{2, {2, num_voxels}});
+  /* network_trt_ptr_->setInputShape("serialized_order", nvinfer1::Dims{2, {2, num_voxels}});
+  network_trt_ptr_->setInputShape("serialized_inverse", nvinfer1::Dims{2, {2, num_voxels}}); */
 
   return true;
 }

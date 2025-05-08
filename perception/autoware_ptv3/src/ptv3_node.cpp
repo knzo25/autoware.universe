@@ -29,7 +29,7 @@ namespace autoware::ptv3
 PTv3Node::PTv3Node(const rclcpp::NodeOptions & options) : Node("ptv3", options)
 {
   // sleep 10 to attach the debugger
-  rclcpp::sleep_for(std::chrono::seconds(20));
+  rclcpp::sleep_for(std::chrono::seconds(2));
 
   auto descriptor = rcl_interfaces::msg::ParameterDescriptor{}.set__read_only(true);
 
