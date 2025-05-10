@@ -57,7 +57,7 @@ std::int64_t unique(
     /* end_bit */ 64,
     /* stream */ stream);
 
-  std::vector<std::int64_t> sorted_input_host(num_input_elements);
+  /* std::vector<std::int64_t> sorted_input_host(num_input_elements);
   cudaMemcpyAsync(
     sorted_input_host.data(), sorted_input, num_input_elements * sizeof(std::int64_t),
     cudaMemcpyDeviceToHost, stream);
@@ -66,7 +66,7 @@ std::int64_t unique(
   cudaMemcpyAsync(
     sorted_idx_host.data(), sorted_idx, num_input_elements * sizeof(std::int64_t),
     cudaMemcpyDeviceToHost, stream);
-  cudaStreamSynchronize(stream);
+  cudaStreamSynchronize(stream); */
 
   /////////////
 
@@ -90,7 +90,7 @@ std::int64_t unique(
   thrust::scatter(
     policy, inv_loc_ptr, inv_loc_ptr + num_input_elements, sorted_idx, inverse_indices);
 
-  std::vector<std::int64_t> inv_loc_host(num_input_elements);
+  /* std::vector<std::int64_t> inv_loc_host(num_input_elements);
   cudaMemcpyAsync(
     inv_loc_host.data(), inv_loc_ptr, num_input_elements * sizeof(std::int64_t),
     cudaMemcpyDeviceToHost, stream);
@@ -100,7 +100,7 @@ std::int64_t unique(
   cudaMemcpyAsync(
     inverse_indices_host.data(), inverse_indices, num_input_elements * sizeof(std::int64_t),
     cudaMemcpyDeviceToHost, stream);
-  cudaStreamSynchronize(stream);
+  cudaStreamSynchronize(stream); */
 
   // unique and count
   // Tensor counts = at::empty({0}, options);
@@ -120,7 +120,7 @@ std::int64_t unique(
   // int64_t* counts_ptr = counts.mutable_data_ptr<int64_t>();
   thrust::adjacent_difference(policy, range_ptr + 1, range_ptr + num_out + 1, unique_counts);
 
-  std::vector<std::int64_t> unique_counts_host(num_out);
+  /* std::vector<std::int64_t> unique_counts_host(num_out);
   cudaMemcpyAsync(
     unique_counts_host.data(), unique_counts, num_out * sizeof(std::int64_t),
     cudaMemcpyDeviceToHost, stream);
@@ -128,7 +128,7 @@ std::int64_t unique(
   std::vector<std::int64_t> unique_host(num_out);
   cudaMemcpyAsync(
     unique_host.data(), sorted_input, num_out * sizeof(std::int64_t), cudaMemcpyDeviceToHost,
-    stream);
+    stream); */
   cudaStreamSynchronize(stream);
 
   return num_out;

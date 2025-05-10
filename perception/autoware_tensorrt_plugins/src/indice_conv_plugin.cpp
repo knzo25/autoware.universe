@@ -195,7 +195,7 @@ bool IndiceConvPlugin::supportsFormatCombination(
     case INOUT_IN_FEATURES_INDEX:
       supported &=
         (in_out[pos].desc.type == nvinfer1::DataType::kFLOAT ||
-         in_out[pos].desc.type == nvinfer1::DataType::kFLOAT);  // kHALF
+         in_out[pos].desc.type == nvinfer1::DataType::kHALF);
       break;
     case INOUT_FILTERS_INDEX:
     case INOUT_OUT_FEATURES_INDEX:
@@ -248,7 +248,7 @@ std::int32_t IndiceConvPlugin::enqueue(
   void const * const * inputs, void * const * outputs, [[maybe_unused]] void * workspace,
   cudaStream_t stream) noexcept
 {
-  std::cout << "IndiceConvPlugin::enqueue::start" << std::endl;
+  /* std::cout << "IndiceConvPlugin::enqueue::start" << std::endl;
 
   std::vector<float> input_data(input_desc[0].dims.d[0] * input_desc[0].dims.d[1]);
   int32_t sample_features = std::min<int32_t>(input_desc[0].dims.d[1], 6);
@@ -264,7 +264,7 @@ std::int32_t IndiceConvPlugin::enqueue(
       std::cout << input_data[i * input_desc[0].dims.d[1] + j] << ", ";
     }
     std::cout << "]" << std::endl;
-  }
+  } */
 
   using StaticAllocator = spconvlib::spconv::csrc::sparse::alloc::StaticAllocator;
   using ConvGemmOps = spconvlib::spconv::csrc::sparse::convops::spops::ConvGemmOps;
@@ -290,11 +290,11 @@ std::int32_t IndiceConvPlugin::enqueue(
   auto dtype = in_features_type == DataType::kFLOAT ? tv::float32 : tv::float16;
 
   /** start of dummy input */
-  std::vector<float> external_features_host;
+  /* std::vector<float> external_features_host;
   std::vector<float> external_weights_host;
 
   std::vector<std::int32_t> external_pairs_host;
-  std::vector<std::int32_t> external_pairs_num_host;
+  std::vector<std::int32_t> external_pairs_num_host; */
 
   /* loadFloats("indice_conv_features.txt", external_features_host);
   loadFloats("indice_conv_filters.txt", external_weights_host);
@@ -413,7 +413,7 @@ std::int32_t IndiceConvPlugin::enqueue(
       tv::Tensor(), 0.f, 0.f, tv::gemm::Activation::kNone, false);
   }
 
-  std::vector<float> weight_test_data(
+  /* std::vector<float> weight_test_data(
     input_desc[INOUT_FILTERS_INDEX].dims.d[0] * input_desc[INOUT_FILTERS_INDEX].dims.d[1] *
     input_desc[INOUT_FILTERS_INDEX].dims.d[2] * input_desc[INOUT_FILTERS_INDEX].dims.d[3] *
     input_desc[INOUT_FILTERS_INDEX].dims.d[4]);
@@ -440,7 +440,7 @@ std::int32_t IndiceConvPlugin::enqueue(
       std::cout << out_features_host[i * num_out_features + j] << ", ";
     }
     std::cout << "]" << std::endl;
-  }
+  } */
 
   /* std::cout << "weight_test_data: ";
   // print all the weights
@@ -457,7 +457,7 @@ std::int32_t IndiceConvPlugin::enqueue(
   std::cout << "out_features: " <<
   out_features.cpu().slice_first_axis(0,20).slice(1,0,6,1,false,false) << std::endl; */
 
-  std::cout << "IndiceConvPlugin::enqueue end" << std::endl;
+  /* std::cout << "IndiceConvPlugin::enqueue end" << std::endl; */
 
   return 0;
 }

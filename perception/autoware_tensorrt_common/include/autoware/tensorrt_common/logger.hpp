@@ -206,7 +206,7 @@ class Logger : public nvinfer1::ILogger  // NOLINT
 public:
   //  Logger(Severity severity = Severity::kWARNING)
   //  Logger(Severity severity = Severity::kVERBOSE)
-  explicit Logger(Severity severity = Severity::kVERBOSE)
+  explicit Logger(Severity severity = Severity::kINFO)
   : mReportableSeverity(severity), mVerbose(true), mThrottleStopFlag(false)
   {
   }

@@ -18,10 +18,12 @@
 #include "autoware/ptv3/ptv3_trt.hpp"
 #include "autoware/ptv3/visibility_control.hpp"
 
-#include <Eigen/Core>
 #include <autoware/universe_utils/ros/debug_publisher.hpp>
 #include <autoware/universe_utils/ros/published_time_publisher.hpp>
 #include <autoware/universe_utils/system/stop_watch.hpp>
+#include <cuda_blackboard/cuda_blackboard_publisher.hpp>
+#include <cuda_blackboard/cuda_blackboard_subscriber.hpp>
+#include <cuda_blackboard/cuda_pointcloud2.hpp>
 #include <rclcpp/rclcpp.hpp>
 
 #include <sensor_msgs/msg/point_cloud2.hpp>
@@ -38,15 +40,29 @@ namespace autoware::ptv3
 class PTV3_PUBLIC PTv3Node : public rclcpp::Node
 {
 public:
-  using Matrix4f = Eigen::Matrix<float, 4, 4, Eigen::RowMajor>;
-
   explicit PTv3Node(const rclcpp::NodeOptions & options);
 
-private:
-  void cloudCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg);
+  void publishSegmentedPointcloud(std::unique_ptr<const cuda_blackboard::CudaPointCloud2> msg_ptr);
 
-  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::ConstSharedPtr cloud_sub_{nullptr};
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_pub_{nullptr};
+  void publishGroundSegmentedPointcloud(
+    std::unique_ptr<const cuda_blackboard::CudaPointCloud2> msg_ptr);
+
+  void publishProbsPointcloud(std::unique_ptr<const cuda_blackboard::CudaPointCloud2> msg_ptr);
+
+private:
+  void cloudCallback(const std::shared_ptr<const cuda_blackboard::CudaPointCloud2> & msg_ptr);
+
+  std::unique_ptr<cuda_blackboard::CudaBlackboardSubscriber<cuda_blackboard::CudaPointCloud2>>
+    pointcloud_sub_;
+
+  std::unique_ptr<cuda_blackboard::CudaBlackboardPublisher<cuda_blackboard::CudaPointCloud2>>
+    segmented_pointcloud_pub_;
+
+  std::unique_ptr<cuda_blackboard::CudaBlackboardPublisher<cuda_blackboard::CudaPointCloud2>>
+    ground_segmented_pointcloud_pub_;
+
+  std::unique_ptr<cuda_blackboard::CudaBlackboardPublisher<cuda_blackboard::CudaPointCloud2>>
+    probs_pointcloud_pub_;
 
   std::unique_ptr<PTv3TRT> model_ptr_{nullptr};
 

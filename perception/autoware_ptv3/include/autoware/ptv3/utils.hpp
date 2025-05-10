@@ -15,10 +15,7 @@
 #ifndef AUTOWARE__PTV3__UTILS_HPP_
 #define AUTOWARE__PTV3__UTILS_HPP_
 
-#include <cstddef>
-#include <iostream>
 #include <stdexcept>
-#include <unordered_map>
 
 namespace autoware::ptv3
 {

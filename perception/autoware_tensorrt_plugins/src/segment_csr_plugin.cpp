@@ -39,8 +39,8 @@ namespace nvinfer1::plugin
 SegmentCSRPlugin::SegmentCSRPlugin(const std::string & name, const std::string & reduce)
 : layer_name_{name}, reduce_{reduce}
 {
-  std::cout << "SegmentCSRPlugin::SegmentCSRPlugin | name: " << name << std::endl;
-  std::cout << "SegmentCSRPlugin::SegmentCSRPlugin | reduce: " << reduce_ << std::endl;
+  /* std::cout << "SegmentCSRPlugin::SegmentCSRPlugin | name: " << name << std::endl;
+  std::cout << "SegmentCSRPlugin::SegmentCSRPlugin | reduce: " << reduce_ << std::endl; */
   initFieldsToSerialize();
 }
 
@@ -133,7 +133,7 @@ bool SegmentCSRPlugin::supportsFormatCombination(
     case INOUT_IN_SRC_INDEX:
       supported &=
         (in_out[pos].desc.type == nvinfer1::DataType::kFLOAT ||
-         in_out[pos].desc.type == nvinfer1::DataType::kFLOAT);  // kHALF
+         in_out[pos].desc.type == nvinfer1::DataType::kHALF);
       break;
     case INOUT_IN_INDPTR_INDEX:
       supported &= in_out[pos].desc.type == nvinfer1::DataType::kINT64;
@@ -213,7 +213,7 @@ std::int32_t SegmentCSRPlugin::enqueue(
   void const * const * inputs, void * const * outputs, [[maybe_unused]] void * workspace,
   cudaStream_t stream) noexcept
 {
-  std::cout << "SegmentCSRPlugin::enqueue::start" << std::endl;
+  /* std::cout << "SegmentCSRPlugin::enqueue::start" << std::endl;
   std::cout << "layer_name_: " << layer_name_ << std::endl;
 
   std::string layer_name2 = layer_name_;
@@ -229,23 +229,39 @@ std::int32_t SegmentCSRPlugin::enqueue(
             << input_desc[1].dims.d[0] << "]" << std::endl;
 
   std::cout << "output_desc[0]: nbDims: " << output_desc[0].dims.nbDims << " ["
-            << output_desc[0].dims.d[0] << ", " << output_desc[0].dims.d[1] << "]" << std::endl;
+            << output_desc[0].dims.d[0] << ", " << output_desc[0].dims.d[1] << "]" << std::endl; */
 
-  auto num_output_bytes = output_desc[0].dims.d[0] * output_desc[0].dims.d[1] * sizeof(float);
+  // auto num_output_bytes = output_desc[0].dims.d[0] * output_desc[0].dims.d[1] * sizeof(float);
 
   std::vector<int32_t> src_size{
     static_cast<int32_t>(input_desc[0].dims.d[0]), static_cast<int32_t>(input_desc[0].dims.d[1])};
   std::vector<int32_t> indptr_size{static_cast<int32_t>(input_desc[1].dims.d[0])};
 
-  const float * src_ptr = reinterpret_cast<const float *>(inputs[0]);
-  const int64_t * indptr_ptr = reinterpret_cast<const int64_t *>(inputs[1]);
+  int32_t result;
 
-  std::tuple<float *, int64_t *> out = std::make_tuple(static_cast<float *>(outputs[0]), nullptr);
+  if (input_desc[0].type == nvinfer1::DataType::kFLOAT) {
+    const float * src_ptr = reinterpret_cast<const float *>(inputs[0]);
+    const int64_t * indptr_ptr = reinterpret_cast<const int64_t *>(inputs[1]);
 
-  int32_t result = segment_csr_launch<float, ReductionType::MAX>(
-    src_ptr, src_size, indptr_ptr, indptr_size, out, stream);
+    std::tuple<float *, int64_t *> out = std::make_tuple(static_cast<float *>(outputs[0]), nullptr);
 
-  std::cout << "segment_csr_launch result: " << result << std::endl;
+    AT_DISPATCH_REDUCTION_TYPES(reduce_, [&] {
+      result =
+        segment_csr_launch<float, REDUCE>(src_ptr, src_size, indptr_ptr, indptr_size, out, stream);
+    });
+  } else if (input_desc[0].type == nvinfer1::DataType::kHALF) {
+    const half * src_ptr = reinterpret_cast<const half *>(inputs[0]);
+    const int64_t * indptr_ptr = reinterpret_cast<const int64_t *>(inputs[1]);
+
+    std::tuple<half *, int64_t *> out = std::make_tuple(static_cast<half *>(outputs[0]), nullptr);
+
+    AT_DISPATCH_REDUCTION_TYPES(reduce_, [&] {
+      result =
+        segment_csr_launch<half, REDUCE>(src_ptr, src_size, indptr_ptr, indptr_size, out, stream);
+    });
+  }
+
+  /* std::cout << "segment_csr_launch result: " << result << std::endl;
 
   // Copy the inputs to host to check the result.
   std::vector<float> input_data(input_desc[0].dims.d[0] * input_desc[0].dims.d[1]);
@@ -287,7 +303,7 @@ std::int32_t SegmentCSRPlugin::enqueue(
       std::cout << output_data[i * output_desc[0].dims.d[1] + j] << ", ";
     }
     std::cout << "]" << std::endl;
-  }
+  } */
 
   /* _write_vector_to_text_file(layer_name2 + "_input_data.txt", input_data);
   _write_vector_to_text_file(layer_name2 + "_indptr_data.txt", indptr_data);
@@ -299,7 +315,7 @@ std::int32_t SegmentCSRPlugin::enqueue(
   (void)outputs;
   (void)workspace;
   (void)stream;
-  std::cout << "Name: " << layer_name_ << std::endl;
+  /* std::cout << "Name: " << layer_name_ << std::endl;
   std::cout << "Reduction type: " << reduce_ << " size=" << reduce_.size() << std::endl;
 
   // Check the contents of the map
@@ -307,8 +323,8 @@ std::int32_t SegmentCSRPlugin::enqueue(
     std::cout << "Key: " << pair.first << ", Value: " << pair.second << std::endl;
   }
 
-  std::cout << "Enum type: " << reduce2REDUCE.at(reduce_) << std::endl;
-  std::cout << "SegmentCSRPlugin::enqueue::end" << std::endl;
+  std::cout << "Enum type: " << reduce2REDUCE.at(reduce_) << std::endl; */
+  /* std::cout << "SegmentCSRPlugin::enqueue::end" << std::endl; */
   return 0;
 }
 

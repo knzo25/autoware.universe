@@ -424,6 +424,7 @@ bool TrtCommon::enqueueV3(cudaStream_t stream)
     host_profiler_->reportLayerTime(
       "inference_host",
       std::chrono::duration<float, std::milli>(inference_end - inference_start).count());
+
     return success;
   }
   return context_->enqueueV3(stream);
@@ -496,11 +497,6 @@ bool TrtCommon::initialize()
     builder_config_->setFlag(nvinfer1::BuilderFlag::kINT8);
   }
 
-  // sleep 2 seconds
-  std::this_thread::sleep_for(std::chrono::seconds(2));
-  std::cout << "=====================================================" << std::endl;
-  std::cout << "trt_config_->max_workspace_size: " << trt_config_->max_workspace_size << std::endl
-            << std::flush;
   builder_config_->setMemoryPoolLimit(
     nvinfer1::MemoryPoolType::kWORKSPACE, trt_config_->max_workspace_size);
 
@@ -523,8 +519,6 @@ bool TrtCommon::initialize()
 bool TrtCommon::buildEngineFromOnnx()
 {
   // Build engine
-  logger_->log(nvinfer1::ILogger::Severity::kINFO, "============== Before buildSerializedNetwork");
-
   auto plan = TrtUniquePtr<nvinfer1::IHostMemory>(
     builder_->buildSerializedNetwork(*network_, *builder_config_));
   if (!plan) {
@@ -532,12 +526,8 @@ bool TrtCommon::buildEngineFromOnnx()
     return false;
   }
 
-  logger_->log(nvinfer1::ILogger::Severity::kINFO, "============== Before deserializeCudaEngine");
-
   engine_ = TrtUniquePtr<nvinfer1::ICudaEngine>(
     runtime_->deserializeCudaEngine(plan->data(), plan->size()));
-
-  logger_->log(nvinfer1::ILogger::Severity::kINFO, "============== After deserializeCudaEngine");
 
   if (!engine_) {
     logger_->log(nvinfer1::ILogger::Severity::kERROR, "Fail to create engine");

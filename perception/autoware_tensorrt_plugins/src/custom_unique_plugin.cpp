@@ -200,7 +200,7 @@ std::int32_t CustomUniquePlugin::enqueue(
 {
   // sleep 15s
   // std::this_thread::sleep_for(std::chrono::seconds(15));
-  std::cout << "CustomUniquePlugin::enqueue::start" << std::endl;
+  /* std::cout << "CustomUniquePlugin::enqueue::start" << std::endl;
   std::cout << "layer_name_: " << layer_name_ << std::endl;
 
   std::string layer_name2 = layer_name_;
@@ -208,39 +208,39 @@ std::int32_t CustomUniquePlugin::enqueue(
   std::transform(layer_name2.begin(), layer_name2.end(), layer_name2.begin(), [](unsigned char c) {
     return std::tolower(c);
   });
-  std::cout << "layer_name2: " << layer_name2 << std::endl;
+  std::cout << "layer_name2: " << layer_name2 << std::endl; */
 
-  const int num_test_samples = 20;
+  // const int num_test_samples = 20;
 
   std::int64_t num_elements = input_desc[0].dims.d[0];
 
-  std::vector<std::int64_t> input_data(num_elements);
-  // std::vector<std::int64_t> output_indices(num_elements);
-  std::vector<std::int64_t> inverse_indices(num_elements);
+  // std::vector<std::int64_t> input_data(num_elements);
+  //  std::vector<std::int64_t> output_indices(num_elements);
+  // std::vector<std::int64_t> inverse_indices(num_elements);
 
-  std::int64_t * input_data_ptr = static_cast<std::int64_t *>(const_cast<void *>(inputs[0]));
-  // std::int64_t * output_indices_ptr = static_cast<std::int64_t *>(outputs[0]);
+  // std::int64_t * input_data_ptr = static_cast<std::int64_t *>(const_cast<void *>(inputs[0]));
+  //  std::int64_t * output_indices_ptr = static_cast<std::int64_t *>(outputs[0]);
 
   // Copy input indices to host
-  cudaMemcpy(
+  /* cudaMemcpy(
     input_data.data(), input_data_ptr, num_elements * sizeof(std::int64_t), cudaMemcpyDeviceToHost);
 
   std::cout << "input_data: " << std::endl;
   for (std::int32_t i = 0; i < num_test_samples; ++i) {
     std::cout << input_data[i] << ", ";
   }
-  std::cout << std::endl;
+  std::cout << std::endl; */
 
   /* write_vector_to_text_file(layer_name2 + "_input_data.txt", input_data); */
 
-  std::vector<std::int64_t> unique_data;
-  std::vector<std::int64_t> unique_data_counts;
+  // std::vector<std::int64_t> unique_data;
+  // std::vector<std::int64_t> unique_data_counts;
   /* std::vector<std::int64_t> unique_indices_inverse;
   std::vector<std::int64_t> unique_indices_order;
   std::int32_t num_unique_indices = 0;
   std::int32_t num_unique_indices_real = 0; */
 
-  std::vector<std::int64_t> input_indices(num_elements);
+  /* std::vector<std::int64_t> input_indices(num_elements);
   std::vector<std::int64_t> sorted_data = input_data;
   std::iota(input_indices.begin(), input_indices.end(), 0);
 
@@ -264,7 +264,7 @@ std::int32_t CustomUniquePlugin::enqueue(
 
     int original_index = input_indices[i];
     inverse_indices[original_index] = unique_data.size() - 1;
-  }
+  } */
 
   /* std::vector<std::int64_t> sorted_inverse_indices(num_elements);
   std::iota(sorted_inverse_indices.begin(), sorted_inverse_indices.end(), 0);
@@ -281,7 +281,7 @@ std::int32_t CustomUniquePlugin::enqueue(
   // std::int64_t * output_num_unique_indices_ptr =
   //   reinterpret_cast<std::int64_t *>(outputs[3]);
 
-  std::cout << "unique_data: " << std::endl;
+  /* std::cout << "unique_data: " << std::endl;
   for (std::int32_t i = 0; i < num_test_samples; ++i) {
     std::cout << unique_data[i] << ", ";
   }
@@ -291,7 +291,7 @@ std::int32_t CustomUniquePlugin::enqueue(
   for (std::int32_t i = 0; i < num_test_samples; ++i) {
     std::cout << inverse_indices[i] << ", ";
   }
-  std::cout << std::endl;
+  std::cout << std::endl; */
 
   /* std::cout << "sorted_inverse_indices: " << std::endl;
   for (std::int32_t i = 0; i < num_test_samples; ++i) {
@@ -299,7 +299,7 @@ std::int32_t CustomUniquePlugin::enqueue(
   }
   std::cout << std::endl; */
 
-  std::cout << "unique_indices_counts: " << std::endl;
+  /* std::cout << "unique_indices_counts: " << std::endl;
   for (std::int32_t i = 0; i < num_test_samples; ++i) {
     std::cout << unique_data_counts[i] << ", ";
   }
@@ -312,7 +312,7 @@ std::int32_t CustomUniquePlugin::enqueue(
   if (max_num_elements_ < static_cast<std::size_t>(num_elements)) {
     max_num_elements_ = static_cast<std::size_t>(num_elements);
     workspace_size_ = get_unique_workspace_size(max_num_elements_);
-  }
+  } */
 
   std::int64_t num_unique_elements = unique(
     reinterpret_cast<const std::int64_t *>(inputs[0]), reinterpret_cast<std::int64_t *>(outputs[0]),
@@ -355,7 +355,7 @@ std::int32_t CustomUniquePlugin::enqueue(
   (void)workspace;
   (void)stream;
 
-  std::cout << "CustomUniquePlugin::enqueue::end" << std::endl;
+  /* std::cout << "CustomUniquePlugin::enqueue::end" << std::endl; */
 
   return 0;
 }

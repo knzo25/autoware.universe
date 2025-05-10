@@ -16,19 +16,8 @@
 #define AUTOWARE__PTV3__ROS_UTILS_HPP_
 
 #include "autoware/ptv3/preprocess/point_type.hpp"
-#include "autoware/ptv3/utils.hpp"
 
 #include <autoware/point_types/types.hpp>
-
-#include <autoware_perception_msgs/msg/detected_object_kinematics.hpp>
-#include <autoware_perception_msgs/msg/detected_objects.hpp>
-#include <autoware_perception_msgs/msg/object_classification.hpp>
-#include <autoware_perception_msgs/msg/shape.hpp>
-#include <sensor_msgs/msg/point_field.hpp>
-
-#include <cstdint>
-#include <string>
-#include <vector>
 
 #define CHECK_OFFSET(structure1, structure2, field)             \
   static_assert(                                                \
@@ -51,12 +40,6 @@ CHECK_FIELD(InputPointType, autoware::point_types::PointXYZIRC, y);
 CHECK_FIELD(InputPointType, autoware::point_types::PointXYZIRC, z);
 CHECK_FIELD(InputPointType, autoware::point_types::PointXYZIRC, intensity);
 static_assert(sizeof(InputPointType) == sizeof(autoware::point_types::PointXYZIRC));
-
-void box3DToDetectedObject(
-  const Box3D & box3d, const std::vector<std::string> & class_names,
-  autoware_perception_msgs::msg::DetectedObject & obj);
-
-uint8_t getSemanticType(const std::string & class_name);
 
 }  // namespace autoware::ptv3
 

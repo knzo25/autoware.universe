@@ -20,7 +20,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <utility>  // TODO(knzo25): delete this
+#include <utility>
 #include <vector>
 
 namespace autoware::ptv3
@@ -28,9 +28,6 @@ namespace autoware::ptv3
 
 PTv3Node::PTv3Node(const rclcpp::NodeOptions & options) : Node("ptv3", options)
 {
-  // sleep 10 to attach the debugger
-  rclcpp::sleep_for(std::chrono::seconds(2));
-
   auto descriptor = rcl_interfaces::msg::ParameterDescriptor{}.set__read_only(true);
 
   // TensorRT parameters
@@ -57,7 +54,13 @@ PTv3Node::PTv3Node(const rclcpp::NodeOptions & options) : Node("ptv3", options)
     to_float_vector(this->declare_parameter<std::vector<double>>("voxel_size", descriptor));
 
   // Head parameters
-  // class_names_ = this->declare_parameter<std::vector<std::string>>("class_names", descriptor);
+  auto class_names = this->declare_parameter<std::vector<std::string>>("class_names", descriptor);
+
+  const auto colors_red = this->declare_parameter<std::vector<int>>("colors_red", descriptor);
+  const auto colors_green = this->declare_parameter<std::vector<int>>("colors_green", descriptor);
+  const auto colors_blue = this->declare_parameter<std::vector<int>>("colors_blue", descriptor);
+  const auto ground_prob_threshold =
+    this->declare_parameter<float>("ground_prob_threshold", descriptor);
 
   if (point_cloud_range.size() != 6) {
     RCLCPP_ERROR(rclcpp::get_logger("ptv3"), "The size of point_cloud_range != 6");
@@ -70,20 +73,39 @@ PTv3Node::PTv3Node(const rclcpp::NodeOptions & options) : Node("ptv3", options)
     throw std::runtime_error("The size of voxel_size != 3");
   }
 
-  PTv3Config config(plugins_path, cloud_capacity, voxels_num, point_cloud_range, voxel_size);
+  PTv3Config config(
+    plugins_path, cloud_capacity, voxels_num, point_cloud_range, voxel_size, colors_red,
+    colors_green, colors_blue, class_names, ground_prob_threshold);
 
   auto trt_config =
     tensorrt_common::TrtCommonConfig(onnx_path, trt_precision, engine_path, 1ULL << 33U);
   model_ptr_ = std::make_unique<PTv3TRT>(trt_config, config);
 
-  cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-    "~/input/pointcloud", rclcpp::SensorDataQoS{}.keep_last(1),
-    std::bind(&PTv3Node::cloudCallback, this, std::placeholders::_1));
+  pointcloud_sub_ =
+    std::make_unique<cuda_blackboard::CudaBlackboardSubscriber<cuda_blackboard::CudaPointCloud2>>(
+      *this, "~/input/pointcloud",
+      std::bind(&PTv3Node::cloudCallback, this, std::placeholders::_1));
 
-  cloud_pub_ =
-    this->create_publisher<sensor_msgs::msg::PointCloud2>("~/output/pointcloud", rclcpp::QoS(1));
+  segmented_pointcloud_pub_ =
+    std::make_unique<cuda_blackboard::CudaBlackboardPublisher<cuda_blackboard::CudaPointCloud2>>(
+      *this, "~/output/segmented/pointcloud");
+
+  ground_segmented_pointcloud_pub_ =
+    std::make_unique<cuda_blackboard::CudaBlackboardPublisher<cuda_blackboard::CudaPointCloud2>>(
+      *this, "~/output/ground_segmented/pointcloud");
+
+  probs_pointcloud_pub_ =
+    std::make_unique<cuda_blackboard::CudaBlackboardPublisher<cuda_blackboard::CudaPointCloud2>>(
+      *this, "~/output/probs/pointcloud");
 
   published_time_pub_ = std::make_unique<autoware::universe_utils::PublishedTimePublisher>(this);
+
+  model_ptr_->setPublishSegmentedPointcloud(
+    std::bind(&PTv3Node::publishSegmentedPointcloud, this, std::placeholders::_1));
+  model_ptr_->setPublishGroundSegmentedPointcloud(
+    std::bind(&PTv3Node::publishGroundSegmentedPointcloud, this, std::placeholders::_1));
+  model_ptr_->setPublishProbsPointcloud(
+    std::bind(&PTv3Node::publishProbsPointcloud, this, std::placeholders::_1));
 
   // initialize debug tool
   {
@@ -99,19 +121,41 @@ PTv3Node::PTv3Node(const rclcpp::NodeOptions & options) : Node("ptv3", options)
     RCLCPP_INFO(this->get_logger(), "TensorRT engine was built. Shutting down the node.");
     rclcpp::shutdown();
   }
-
-  timer_ = this->create_wall_timer(std::chrono::milliseconds(10 * 1000), [this]() {
-    auto msg_ptr = std::make_unique<sensor_msgs::msg::PointCloud2>();
-    model_ptr_->fake_segment(*msg_ptr);
-    cloud_pub_->publish(std::move(msg_ptr));
-  });
 }
 
-void PTv3Node::cloudCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr pc_msg)
+void PTv3Node::publishSegmentedPointcloud(
+  std::unique_ptr<const cuda_blackboard::CudaPointCloud2> msg_ptr)
 {
-  const auto sub_count =
-    cloud_pub_->get_subscription_count() + cloud_pub_->get_intra_process_subscription_count();
-  if (sub_count < 1) {
+  segmented_pointcloud_pub_->publish(std::move(msg_ptr));
+}
+
+void PTv3Node::publishGroundSegmentedPointcloud(
+  std::unique_ptr<const cuda_blackboard::CudaPointCloud2> msg_ptr)
+{
+  ground_segmented_pointcloud_pub_->publish(std::move(msg_ptr));
+}
+
+void PTv3Node::publishProbsPointcloud(
+  std::unique_ptr<const cuda_blackboard::CudaPointCloud2> msg_ptr)
+{
+  probs_pointcloud_pub_->publish(std::move(msg_ptr));
+}
+
+void PTv3Node::cloudCallback(
+  const std::shared_ptr<const cuda_blackboard::CudaPointCloud2> & msg_ptr)
+{
+  const auto segmented_sub_count =
+    segmented_pointcloud_pub_->get_subscription_count() +
+    segmented_pointcloud_pub_->get_intra_process_subscription_count();
+
+  const auto ground_segmented_sub_count =
+    ground_segmented_pointcloud_pub_->get_subscription_count() +
+    ground_segmented_pointcloud_pub_->get_intra_process_subscription_count();
+
+  const auto probs_sub_count = probs_pointcloud_pub_->get_subscription_count() +
+                               probs_pointcloud_pub_->get_intra_process_subscription_count();
+
+  if (segmented_sub_count + ground_segmented_sub_count + probs_sub_count == 0) {
     return;
   }
 
@@ -119,16 +163,11 @@ void PTv3Node::cloudCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr
     stop_watch_ptr_->toc("processing/total", true);
   }
 
-  auto output_msg = std::make_unique<sensor_msgs::msg::PointCloud2>();
   std::unordered_map<std::string, double> proc_timing;
-  bool is_success = model_ptr_->segment(pc_msg, *output_msg, proc_timing);
+  bool is_success = model_ptr_->segment(
+    msg_ptr, segmented_sub_count, ground_segmented_sub_count, probs_sub_count, proc_timing);
   if (!is_success) {
     return;
-  }
-
-  if (sub_count > 0) {
-    cloud_pub_->publish(std::move(output_msg));
-    published_time_pub_->publish_if_subscribed(cloud_pub_, output_msg->header.stamp);
   }
 
   // add processing time for debug
@@ -137,8 +176,7 @@ void PTv3Node::cloudCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr
     const double processing_time_ms = stop_watch_ptr_->toc("processing/total", true);
     const double pipeline_latency_ms =
       std::chrono::duration<double, std::milli>(
-        std::chrono::nanoseconds(
-          (this->get_clock()->now() - output_msg->header.stamp).nanoseconds()))
+        std::chrono::nanoseconds((this->get_clock()->now() - msg_ptr->header.stamp).nanoseconds()))
         .count();
     debug_publisher_ptr_->publish<tier4_debug_msgs::msg::Float64Stamped>(
       "debug/cyclic_time_ms", cyclic_time_ms);

@@ -18,6 +18,9 @@
 #include "autoware/ptv3/ptv3_config.hpp"
 #include "autoware/ptv3/utils.hpp"
 
+#include <autoware/cuda_utils/cuda_check_error.hpp>
+#include <autoware/cuda_utils/cuda_unique_ptr.hpp>
+
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 
@@ -26,13 +29,31 @@
 namespace autoware::ptv3
 {
 
+using autoware::cuda_utils::CudaUniquePtr;
+
 class PostprocessCuda
 {
 public:
   explicit PostprocessCuda(const PTv3Config & config, cudaStream_t stream);
 
+  void paintPointcloud(
+    const float * input_features, const std::int64_t * pred_labels, float * output_points,
+    std::size_t num_points);
+
+  void createProbsPointcloud(
+    const float * input_features, const float * pred_probs, float * output_points,
+    std::size_t num_classes, std::size_t num_points);
+
+  std::size_t createGroundSegmentedPointcloud(
+    const float * input_features, const std::int64_t * pred_labels, const float * pred_probs,
+    float * output_points, const int ground_label, const float ground_prob_threshold,
+    std::size_t num_classes, std::size_t num_points);
+
 private:
   PTv3Config config_;
+
+  CudaUniquePtr<std::uint32_t[]> ground_mask_d_{nullptr};
+  CudaUniquePtr<float[]> color_map_d_{nullptr};
   cudaStream_t stream_;
 };
 

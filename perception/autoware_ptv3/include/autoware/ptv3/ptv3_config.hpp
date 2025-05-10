@@ -15,9 +15,13 @@
 #ifndef AUTOWARE__PTV3__PTV3_CONFIG_HPP_
 #define AUTOWARE__PTV3__PTV3_CONFIG_HPP_
 
+#include <algorithm>
 #include <array>
-#include <cstddef>
+#include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <limits>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -30,7 +34,9 @@ public:
   PTv3Config(
     const std::string & plugins_path, const std::int64_t cloud_capacity,
     const std::vector<std::int64_t> & voxels_num, const std::vector<float> & point_cloud_range,
-    const std::vector<float> & voxel_size)
+    const std::vector<float> & voxel_size, const std::vector<std::int64_t> & colors_red,
+    const std::vector<std::int64_t> & colors_green, const std::vector<std::int64_t> & colors_blue,
+    const std::vector<std::string> & class_names, const float ground_prob_threshold)
   {
     plugins_path_ = plugins_path;
 
@@ -61,6 +67,51 @@ public:
     grid_x_size_ = static_cast<std::int64_t>((max_x_range_ - min_x_range_) / voxel_x_size_);
     grid_y_size_ = static_cast<std::int64_t>((max_y_range_ - min_y_range_) / voxel_y_size_);
     grid_z_size_ = static_cast<std::int64_t>((max_z_range_ - min_z_range_) / voxel_z_size_);
+    auto max_grid_size = std::max({grid_x_size_, grid_y_size_, grid_z_size_});
+    serialization_depth_ =
+      static_cast<std::int32_t>(std::ceil(std::log2(static_cast<float>(max_grid_size))));
+    auto max_voxels_depth =
+      static_cast<std::int32_t>(std::ceil(std::log2(static_cast<float>(max_num_voxels_))));
+    if (serialization_depth_ * 3 + max_voxels_depth >= 64) {
+      throw std::runtime_error("Serialization depth is too large");
+    }
+
+    use_64bit_hash_ =
+      grid_x_size_ * grid_y_size_ * grid_z_size_ > std::numeric_limits<std::uint32_t>::max();
+
+    class_names_ = class_names;
+
+    if (
+      colors_red.size() != class_names_.size() || colors_green.size() != class_names_.size() ||
+      colors_blue.size() != class_names_.size()) {
+      throw std::runtime_error(
+        "The size of colors_red, colors_green, and colors_blue must be the same as class_names");
+    }
+
+    for (std::size_t i = 0; i < class_names_.size(); ++i) {
+      std::uint8_t r = static_cast<std::uint8_t>(colors_red[i]);
+      std::uint8_t g = static_cast<std::uint8_t>(colors_green[i]);
+      std::uint8_t b = static_cast<std::uint8_t>(colors_blue[i]);
+      std::uint32_t rgb = (r << 16) | (g << 8) | b;
+      float rgb_float;
+      memcpy(&rgb_float, &rgb, sizeof(rgb_float));
+      colors_rgb_.push_back(rgb_float);
+
+      std::string class_name = class_names_[i];
+      std::transform(class_name.begin(), class_name.end(), class_name.begin(), [](unsigned char c) {
+        return std::tolower(c);
+      });
+
+      if (class_name == "ground") {
+        ground_label_ = static_cast<std::int32_t>(i);
+      }
+    }
+
+    if (ground_label_ == -1) {
+      throw std::runtime_error("Ground label not found in class names");
+    }
+
+    ground_prob_threshold_ = ground_prob_threshold;
   }
 
   // CUDA parameters
@@ -69,7 +120,17 @@ public:
   // TensorRT parameters
   std::string plugins_path_{};
 
+  // Preprocess parameters
+  bool use_64bit_hash_{};
+  std::int32_t serialization_depth_{};
+
   ///// NETWORK PARAMETERS /////
+
+  // Head parameters
+  std::vector<std::string> class_names_{};
+  std::vector<float> colors_rgb_{};
+  float ground_prob_threshold_{};
+  std::int32_t ground_label_{-1};
 
   // Common network parameters
   std::int64_t cloud_capacity_{};

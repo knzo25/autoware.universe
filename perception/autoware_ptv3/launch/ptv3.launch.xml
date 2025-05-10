@@ -1,8 +1,10 @@
 <?xml version="1.0"?>
 <launch>
   <arg name="input/pointcloud" default="/sensing/lidar/concatenated/pointcloud"/>
-  <arg name="output/pointcloud" default="/sensing/lidar/concatenated/segmented"/>
-  <arg name="output/objects" default="objects"/>
+  <arg name="segmented/pointcloud" default="/sensing/lidar/concatenated/segmented"/>
+  <arg name="ground_segmented/pointcloud" default="/sensing/lidar/concatenated/no_ground"/>
+  <arg name="probs/pointcloud" default="/sensing/lidar/concatenated/probs"/>
+
   <arg name="data_path" default="$(env HOME)/autoware_data" description="packages data and artifacts directory path"/>
   <arg name="data_path" default="$(env HOME)/autoware_data" description="packages data and artifacts directory path"/>
   <arg name="model_name" default="ptv3">
@@ -23,7 +25,13 @@
     <load_composable_node target="$(var pointcloud_container_name)">
       <composable_node pkg="autoware_ptv3" plugin="autoware::ptv3::PTv3Node" name="ptv3">
         <remap from="~/input/pointcloud" to="$(var input/pointcloud)"/>
-        <remap from="~/output/pointcloud" to="$(var output/pointcloud)"/>
+        <remap from="~/input/pointcloud/cuda" to="$(var input/pointcloud)/cuda"/>
+        <remap from="~/output/segmented/pointcloud" to="$(var segmented/pointcloud)"/>
+        <remap from="~/output/segmented/pointcloud/cuda" to="$(var segmented/pointcloud)/cuda"/>
+        <remap from="~/output/ground_segmented/pointcloud" to="$(var ground_segmented/pointcloud)"/>
+        <remap from="~/output/ground_segmented/pointcloud/cuda" to="$(var ground_segmented/pointcloud)/cuda"/>
+        <remap from="~/output/probs/pointcloud" to="$(var probs/pointcloud)"/>
+        <remap from="~/output/probs/pointcloud/cuda" to="$(var probs/pointcloud)/cuda"/>
         <param from="$(var model_param_path)" allow_substs="true"/>
         <param from="$(var ml_package_param_path)" allow_substs="true"/>
 
@@ -35,7 +43,14 @@
   <group unless="$(var use_pointcloud_container)">
     <node pkg="autoware_ptv3" exec="autoware_ptv3_node" name="ptv3" output="screen" args="--ros-args --log-level $(var log_level)">
       <remap from="~/input/pointcloud" to="$(var input/pointcloud)"/>
-      <remap from="~/output/pointcloud" to="$(var output/pointcloud)"/>
+      <remap from="~/input/pointcloud/cuda" to="$(var input/pointcloud)/cuda"/>
+      <remap from="~/output/segmented/pointcloud" to="$(var segmented/pointcloud)"/>
+      <remap from="~/output/segmented/pointcloud/cuda" to="$(var segmented/pointcloud)/cuda"/>
+      <remap from="~/output/ground_segmented/pointcloud" to="$(var ground_segmented/pointcloud)"/>
+      <remap from="~/output/ground_segmented/pointcloud/cuda" to="$(var ground_segmented/pointcloud)/cuda"/>
+      <remap from="~/output/probs/pointcloud" to="$(var probs/pointcloud)"/>
+      <remap from="~/output/probs/pointcloud/cuda" to="$(var probs/pointcloud)/cuda"/>
+
       <param from="$(var model_param_path)" allow_substs="true"/>
       <param from="$(var ml_package_param_path)" allow_substs="true"/>
 

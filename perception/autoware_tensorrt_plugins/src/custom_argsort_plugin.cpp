@@ -157,8 +157,8 @@ std::int32_t CustomArgsortPlugin::enqueue(
   void const * const * inputs, void * const * outputs, [[maybe_unused]] void * workspace,
   cudaStream_t stream) noexcept
 {
-  const int num_test_samples = 20;
-  std::cout << "CustomArgsortPlugin::enqueue::start" << std::endl;
+  // const int num_test_samples = 20;
+  /* std::cout << "CustomArgsortPlugin::enqueue::start" << std::endl; */
 
   auto num_elements = static_cast<std::size_t>(input_desc[0].dims.d[0]);
   if (max_num_elements_ < num_elements) {
@@ -171,7 +171,7 @@ std::int32_t CustomArgsortPlugin::enqueue(
     reinterpret_cast<std::int64_t const *>(inputs[0]), reinterpret_cast<std::int64_t *>(outputs[0]),
     workspace, num_elements, argsort_workspace_size_, stream);
 
-  std::vector<std::int64_t> cuda_result_host(num_elements);
+  /* std::vector<std::int64_t> cuda_result_host(num_elements);
   cudaMemcpyAsync(
     cuda_result_host.data(), outputs[0], num_elements * sizeof(std::int64_t),
     cudaMemcpyDeviceToHost, stream);
@@ -180,15 +180,15 @@ std::int32_t CustomArgsortPlugin::enqueue(
   for (std::int32_t i = 0; i < num_test_samples; ++i) {
     std::cout << cuda_result_host[i] << ", ";
   }
-  std::cout << std::endl;
+  std::cout << std::endl; */
 
   // cuda version end
 
   // std::int64_t num_elements = input_desc[0].dims.d[0];
-  std::int64_t const * input_data_device_ptr = reinterpret_cast<std::int64_t const *>(inputs[0]);
-  std::int64_t * output_indices_device_ptr = reinterpret_cast<std::int64_t *>(outputs[0]);
+  // std::int64_t const * input_data_device_ptr = reinterpret_cast<std::int64_t const *>(inputs[0]);
+  // std::int64_t * output_indices_device_ptr = reinterpret_cast<std::int64_t *>(outputs[0]);
 
-  std::vector<std::int64_t> input_data_host(num_elements);
+  /* std::vector<std::int64_t> input_data_host(num_elements);
   std::vector<std::int64_t> output_indices_host(num_elements);
 
   std::vector<std::int64_t> indices(num_elements);
@@ -226,7 +226,7 @@ std::int32_t CustomArgsortPlugin::enqueue(
 
   cudaMemcpyAsync(
     output_indices_device_ptr, indices.data(), num_elements * sizeof(std::int64_t),
-    cudaMemcpyHostToDevice);
+    cudaMemcpyHostToDevice); */
 
   (void)input_desc;
   (void)output_desc;
@@ -235,7 +235,7 @@ std::int32_t CustomArgsortPlugin::enqueue(
   (void)workspace;
   (void)stream;
 
-  std::cout << "CustomArgsortPlugin::enqueue::end" << std::endl;
+  /* std::cout << "CustomArgsortPlugin::enqueue::end" << std::endl; */
 
   return 0;
 }

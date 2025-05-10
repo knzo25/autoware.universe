@@ -213,8 +213,8 @@ std::int32_t GetIndicesPairsPlugin::getOutputShapes(
 
     outputs[2].nbDims = 1;
     outputs[2].d[0] = expr_builder.constant(kernel_volume);
-    std::cout << "GetIndicesPairsPlugin::getOutputShapes kernel_volume: " << kernel_volume
-              << std::endl;
+    /* std::cout << "GetIndicesPairsPlugin::getOutputShapes kernel_volume: " << kernel_volume
+              << std::endl; */
 
   } else {
     auto opt_value = expr_builder.operation(
@@ -246,7 +246,7 @@ std::int32_t GetIndicesPairsPlugin::enqueue(
   void const * const * inputs, void * const * outputs, [[maybe_unused]] void * workspace,
   cudaStream_t stream) noexcept
 {
-  std::cout << "GetIndicesPairsPlugin::enqueue::start" << std::endl;
+  /* std::cout << "GetIndicesPairsPlugin::enqueue::start" << std::endl; */
 
   using SpconvOps = spconvlib::spconv::csrc::sparse::all::SpconvOps;
   using StaticAllocator = spconvlib::spconv::csrc::sparse::alloc::StaticAllocator;
@@ -286,12 +286,12 @@ std::int32_t GetIndicesPairsPlugin::enqueue(
   tv::Tensor pair = tv::from_blob(outputs[1], {2, kernel_volume, num_act_in}, tv::int32, 0);
   tv::Tensor indices_kernel_num = tv::from_blob(outputs[2], {kernel_volume}, tv::int32, 0);
 
-  tv::Context ctx;
-  ctx.set_cuda_stream_int(reinterpret_cast<std::uintptr_t>(stream));
+  /* tv::Context ctx;
+  ctx.set_cuda_stream_int(reinterpret_cast<std::uintptr_t>(stream)); */
 
-  std::cout << "kernel_volume: " << kernel_volume << std::endl;
+  /* std::cout << "kernel_volume: " << kernel_volume << std::endl;
   std::cout << "num_act_in: " << num_act_in << std::endl;
-  std::cout << indices_kernel_num.numel() << std::endl;
+  std::cout << indices_kernel_num.numel() << std::endl; */
 
   // indices_kernel_num = tv::zeros({kernel_volume}, tv::int32, 0);
   cudaMemsetAsync(indices_kernel_num.data_ptr(), 0, kernel_volume * sizeof(std::int32_t), stream);
@@ -356,7 +356,7 @@ std::int32_t GetIndicesPairsPlugin::enqueue(
 
    std::cout << "num_act_out_real: " << num_act_out_real << std::endl; */
 
-  std::cout << "GetIndicesPairsPlugin::enqueue end" << std::endl;
+  /* std::cout << "GetIndicesPairsPlugin::enqueue end" << std::endl; */
 
   return status;
 }

@@ -68,20 +68,8 @@ else()
   set(CUDNN_AVAIL OFF)
 endif()
 
-# set flags for spconv availability
-option(SPCONV_AVAIL "spconv available" OFF)
-# try to find spconv
-find_package(cumm)
-find_package(spconv)
-if(${cumm_FOUND} AND ${spconv_FOUND})
-  message("spconv is available!")
-  set(SPCONV_AVAIL ON)
-else()
-  message("spconv is NOT available")
-  set(SPCONV_AVAIL OFF)
-endif()
 
-if(TRT_AVAIL AND CUDA_AVAIL AND CUDNN_AVAIL AND SPCONV_AVAIL)
+if(TRT_AVAIL AND CUDA_AVAIL AND CUDNN_AVAIL)
   find_package(ament_cmake_auto REQUIRED)
   ament_auto_find_build_dependencies()
 
@@ -94,11 +82,6 @@ if(TRT_AVAIL AND CUDA_AVAIL AND CUDNN_AVAIL AND SPCONV_AVAIL)
     set(CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS} "-g -G")
   endif()
 
-  # Find Eigen3
-  find_package(Eigen3 3.3 REQUIRED NO_MODULE)
-
-  add_definitions("-DTV_CUDA")
-  add_definitions("-DTV_CUDA_DRIVER")
   # cSpell:ignore expt
   list(APPEND CUDA_NVCC_FLAGS "--expt-relaxed-constexpr -diag-suppress 1675 --extended-lambda")
 
@@ -107,17 +90,12 @@ if(TRT_AVAIL AND CUDA_AVAIL AND CUDNN_AVAIL AND SPCONV_AVAIL)
     lib/preprocess/preprocess_kernel.cu
   )
 
-  target_link_libraries(${PROJECT_NAME}_cuda_lib
-    spconv::spconv
-  )
-
   target_include_directories(${PROJECT_NAME}_cuda_lib
     SYSTEM PUBLIC
     ${autoware_cuda_utils_INCLUDE_DIRS}
   )
 
   ament_auto_add_library(${PROJECT_NAME}_lib SHARED
-    #lib/ros_utils.cpp
     lib/ptv3_trt.cpp
   )
 
