@@ -74,29 +74,18 @@ PreprocessCuda::PreprocessCuda(const PTv3Config & config, cudaStream_t stream)
     thrust::sequence(policy, idx_ptr, idx_ptr + config_.cloud_capacity_ + 1, 0);
   }
 
-  std::uint64_t * d_keys_in = nullptr;   // input keys, size N
-  std::uint64_t * d_keys_out = nullptr;  // (optional) output keys, size N (can be nullptr)
-  std::uint64_t * d_idx_in = nullptr;    // existing device buffer for indices, size N
-  std::uint64_t * d_idx_out = nullptr;   // output indices, size N
+  std::uint64_t * uint64_nullptr = nullptr;
 
   cub::DeviceRadixSort::SortPairs(
-    /* d_temp_storage */ nullptr,
-    /* temp_storage_bytes */ sort_workspace_size_,
-    /* d_keys_in */ d_keys_in,
-    /* d_keys_out */ d_keys_out,  // or nullptr if you don't need sorted keys
-    /* d_values_in */ d_idx_in,
-    /* d_values_out */ d_idx_out,
-    /* num_items */ config_.cloud_capacity_,
-    /* begin_bit */ 0,
-    /* end_bit */ 64,
-    /* stream */ 0);
+    nullptr, sort_workspace_size_, uint64_nullptr, uint64_nullptr, uint64_nullptr, uint64_nullptr,
+    config_.cloud_capacity_, 0, 64, 0);
 
   sort_workspace_d_ = autoware::cuda_utils::make_unique<std::uint8_t[]>(sort_workspace_size_);
 
-  cudaStreamSynchronize(stream_);
+  CHECK_CUDA_ERROR(cudaStreamSynchronize(stream_));
 }
 
-__global__ void extractPointsKernel(
+__global__ void points2FeaturesKernel(
   const InputPointType * __restrict__ input_points, std::size_t points_size,
   float4 * __restrict__ output_points)
 {
@@ -197,10 +186,10 @@ __global__ void voxelizationHash32Kernel(
   hashes[idx] = z * grid_xy_size + y * grid_x_size + x;
 }
 
-__global__ void computeGridCoordsKernel(
-  const float4 * __restrict__ points, longlong3 * __restrict__ coords, int num_points,
-  float voxel_size_x, float voxel_size_y, float voxel_size_z, std::int32_t min_x,
-  std::int32_t min_y, std::int32_t min_z)
+__global__ void computeGridCoordsAndSerializationKernel(
+  const float4 * __restrict__ points, longlong3 * __restrict__ coords,
+  std::int64_t * __restrict__ hashes, int num_points, float voxel_size_x, float voxel_size_y,
+  float voxel_size_z, std::int32_t min_x, std::int32_t min_y, std::int32_t min_z, int depth)
 {
   static_assert(sizeof(longlong3) == sizeof(std::uint64_t) * 3, "longlong3 must be 24 bytes");
   auto idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -209,30 +198,14 @@ __global__ void computeGridCoordsKernel(
   }
 
   const float4 & point = points[idx];
-  std::int32_t x = static_cast<std::int32_t>(std::floor(point.x / voxel_size_x));
-  const std::int32_t y = static_cast<std::int32_t>(std::floor(point.y / voxel_size_y));
-  const std::int32_t z = static_cast<std::int32_t>(std::floor(point.z / voxel_size_z));
+  const std::int64_t x = static_cast<std::int32_t>(std::floor(point.x / voxel_size_x) - min_x);
+  const std::int64_t y = static_cast<std::int32_t>(std::floor(point.y / voxel_size_y) - min_y);
+  const std::int64_t z = static_cast<std::int32_t>(std::floor(point.z / voxel_size_z) - min_z);
 
-  coords[idx] = make_longlong3(
-    static_cast<std::int64_t>(x - min_x), static_cast<std::int64_t>(y - min_y),
-    static_cast<std::int64_t>(z - min_z));
-}
-
-__global__ void serializationHashKernel(
-  const longlong3 * __restrict__ coords, std::int64_t * __restrict__ hashes, int num_points,
-  int depth)
-{
-  auto idx = blockIdx.x * blockDim.x + threadIdx.x;
-  if (idx >= num_points) {
-    return;
-  }
+  coords[idx] = make_longlong3(x, y, z);
 
   std::int64_t key1 = 0;
   std::int64_t key2 = 0;
-
-  const std::int64_t & x = coords[idx].x;
-  const std::int64_t & y = coords[idx].y;
-  const std::int64_t & z = coords[idx].z;
 
   for (int i = 0; i < depth; ++i) {
     std::int64_t mask = 1 << i;
@@ -256,7 +229,7 @@ std::size_t PreprocessCuda::generateFeatures(
   auto policy = thrust::cuda::par.on(stream_);
 
   const auto num_blocks = divup(num_points, config_.threads_per_block_);
-  extractPointsKernel<<<num_blocks, config_.threads_per_block_, 0, stream_>>>(
+  points2FeaturesKernel<<<num_blocks, config_.threads_per_block_, 0, stream_>>>(
     input_data, num_points, reinterpret_cast<float4 *>(points_d_.get()));
 
   cropKernel<<<num_blocks, config_.threads_per_block_, 0, stream_>>>(
@@ -272,7 +245,7 @@ std::size_t PreprocessCuda::generateFeatures(
   cudaMemcpyAsync(
     &num_cropped_points, crop_indices_d_.get() + num_points - 1, sizeof(std::uint32_t),
     cudaMemcpyDeviceToHost, stream_);
-  cudaStreamSynchronize(stream_);
+  CHECK_CUDA_ERROR(cudaStreamSynchronize(stream_));
 
   if (num_cropped_points == 0) {
     return 0;
@@ -313,19 +286,12 @@ std::size_t PreprocessCuda::generateFeatures(
       reinterpret_cast<float4 *>(cropped_points_d_.get()), hashes64_d_.get(), num_cropped_points,
       config_.voxel_x_size_, config_.voxel_y_size_, config_.voxel_z_size_, min_x, min_y, min_z);
 
-    auto result = cub::DeviceRadixSort::SortPairs(
-      /* d_temp_storage */ reinterpret_cast<void *>(sort_workspace_d_.get()),
-      /* temp_storage_bytes */ sort_workspace_size_,
-      /* d_keys_in */ hashes64_d_.get(),
-      /* d_keys_out */ sorted_hashes64_d_.get(),  // or nullptr if you don't need sorted keys
-      /* d_values_in */ hash_indexes64_d_.get(),
-      /* d_values_out */ sorted_hash_indexes64_d_.get(),
-      /* num_items */ num_cropped_points,
-      /* begin_bit */ 0,
-      /* end_bit */ 64,
-      /* stream */ stream_);
+    cub::DeviceRadixSort::SortPairs(
+      reinterpret_cast<void *>(sort_workspace_d_.get()), sort_workspace_size_, hashes64_d_.get(),
+      sorted_hashes64_d_.get(), hash_indexes64_d_.get(), sorted_hash_indexes64_d_.get(),
+      num_cropped_points, 0, 64, stream_);
 
-    auto not_equal = [] __device__(const uint64_t a, const uint64_t b) { return a != b; };
+    auto not_equal = [] __device__(const std::uint64_t a, const std::uint64_t b) { return a != b; };
 
     thrust::adjacent_difference(
       policy, sorted_hashes64_d_.get(), sorted_hashes64_d_.get() + num_cropped_points,
@@ -342,7 +308,6 @@ std::size_t PreprocessCuda::generateFeatures(
     cudaMemcpyAsync(
       &num_unique_points, unique_indices64_d_.get() + num_cropped_points - 1, sizeof(std::int64_t),
       cudaMemcpyDeviceToHost, stream_);
-    cudaStreamSynchronize(stream_);
 
     extractIndicesKernel<<<num_cropped_blocks, config_.threads_per_block_, 0, stream_>>>(
       reinterpret_cast<float4 *>(cropped_points_d_.get()), unique_mask64_d_.get(),
@@ -356,17 +321,10 @@ std::size_t PreprocessCuda::generateFeatures(
       config_.min_y_range_, config_.min_z_range_, static_cast<std::uint32_t>(config_.grid_x_size_),
       static_cast<std::uint32_t>(config_.grid_x_size_ * config_.grid_y_size_));
 
-    auto result = cub::DeviceRadixSort::SortPairs(
-      /* d_temp_storage */ reinterpret_cast<void *>(sort_workspace_d_.get()),
-      /* temp_storage_bytes */ sort_workspace_size_,
-      /* d_keys_in */ hashes32_d_.get(),
-      /* d_keys_out */ sorted_hashes32_d_.get(),  // or nullptr if you don't need sorted keys
-      /* d_values_in */ hash_indexes32_d_.get(),
-      /* d_values_out */ sorted_hash_indexes32_d_.get(),
-      /* num_items */ num_cropped_points,
-      /* begin_bit */ 0,
-      /* end_bit */ 32,
-      /* stream */ stream_);
+    cub::DeviceRadixSort::SortPairs(
+      reinterpret_cast<void *>(sort_workspace_d_.get()), sort_workspace_size_, hashes32_d_.get(),
+      sorted_hashes32_d_.get(), hash_indexes32_d_.get(), sorted_hash_indexes32_d_.get(),
+      num_cropped_points, 0, 32, stream_);
 
     auto not_equal = [] __device__(const std::uint32_t a, const std::uint32_t b) { return a != b; };
 
@@ -386,7 +344,7 @@ std::size_t PreprocessCuda::generateFeatures(
     cudaMemcpyAsync(
       &num_unique_points32, unique_indices32_d_.get() + num_cropped_points - 1,
       sizeof(std::uint32_t), cudaMemcpyDeviceToHost, stream_);
-    cudaStreamSynchronize(stream_);
+    CHECK_CUDA_ERROR(cudaStreamSynchronize(stream_));
 
     num_unique_points = static_cast<std::uint64_t>(num_unique_points32);
 
@@ -396,19 +354,11 @@ std::size_t PreprocessCuda::generateFeatures(
       reinterpret_cast<float4 *>(voxel_features), num_cropped_points);
   }
 
-  computeGridCoordsKernel<<<num_cropped_blocks, config_.threads_per_block_, 0, stream_>>>(
+  computeGridCoordsAndSerializationKernel<<<
+    num_cropped_blocks, config_.threads_per_block_, 0, stream_>>>(
     reinterpret_cast<float4 *>(voxel_features), reinterpret_cast<longlong3 *>(voxel_coords),
-    num_unique_points, config_.voxel_x_size_, config_.voxel_y_size_, config_.voxel_z_size_, min_x,
-    min_y, min_z);
-
-  serializationHashKernel<<<num_cropped_blocks, config_.threads_per_block_, 0, stream_>>>(
-    reinterpret_cast<longlong3 *>(voxel_coords), voxel_hashes, num_unique_points,
-    config_.serialization_depth_);
-
-  /* computeGridCoordsAndSerializationKernel<<<num_cropped_blocks, config_.threads_per_block_, 0,
-    stream_>>>( reinterpret_cast<float4 *>(voxel_features), reinterpret_cast<longlong3
-    *>(voxel_coords), voxel_hashes, num_unique_points, config_.voxel_x_size_, config_.voxel_y_size_,
-    config_.voxel_z_size_, min_x, min_y, min_z, config_.serialization_depth_); */
+    voxel_hashes, num_unique_points, config_.voxel_x_size_, config_.voxel_y_size_,
+    config_.voxel_z_size_, min_x, min_y, min_z, config_.serialization_depth_);
 
   return num_unique_points;
 }

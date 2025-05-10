@@ -85,7 +85,7 @@ PostprocessCuda::PostprocessCuda(const PTv3Config & config, cudaStream_t stream)
     color_map_d_.get(), config_.colors_rgb_.data(), config_.colors_rgb_.size() * sizeof(float),
     cudaMemcpyHostToDevice, stream_);
 
-  cudaStreamSynchronize(stream_);
+  CHECK_CUDA_ERROR(cudaStreamSynchronize(stream_));
 }
 
 void PostprocessCuda::paintPointcloud(
@@ -97,6 +97,8 @@ void PostprocessCuda::paintPointcloud(
   paintPointcloudKernel<<<num_blocks, config_.threads_per_block_, 0, stream_>>>(
     reinterpret_cast<const float4 *>(input_features), color_map_d_.get(), labels,
     reinterpret_cast<float4 *>(output_points), num_points);
+
+  CHECK_CUDA_ERROR(cudaStreamSynchronize(stream_));
 }
 
 void PostprocessCuda::createProbsPointcloud(
@@ -108,6 +110,8 @@ void PostprocessCuda::createProbsPointcloud(
   createProbsPointcloudKernel<<<num_blocks, config_.threads_per_block_, 0, stream_>>>(
     reinterpret_cast<const float4 *>(input_features), pred_probs, output_points, num_classes,
     num_points);
+
+  CHECK_CUDA_ERROR(cudaStreamSynchronize(stream_));
 }
 
 std::size_t PostprocessCuda::createGroundSegmentedPointcloud(
@@ -125,18 +129,15 @@ std::size_t PostprocessCuda::createGroundSegmentedPointcloud(
 
   const thrust::device_ptr<const float4> in_ptr =
     thrust::device_pointer_cast(reinterpret_cast<const float4 *>(input_features));
-  thrust::device_ptr<uint32_t> mask_ptr = thrust::device_pointer_cast(ground_mask_d_.get());
+  thrust::device_ptr<std::uint32_t> mask_ptr = thrust::device_pointer_cast(ground_mask_d_.get());
   thrust::device_ptr<float4> out_ptr =
     thrust::device_pointer_cast(reinterpret_cast<float4 *>(output_points));
 
-  // copy all d_in[i] for which d_mask[i] != 0 into d_out[0…]
   auto new_end = thrust::copy_if(
-    policy, in_ptr, in_ptr + num_points,  // input range
-    mask_ptr,                             // stencil range
-    out_ptr,                              // output range
-    [] __device__(uint32_t m) {
-      return m != 0;  // keep when mask is non-zero
-    });
+    policy, in_ptr, in_ptr + num_points, mask_ptr, out_ptr,
+    [] __device__(std::uint32_t m) { return m != 0; });
+
+  CHECK_CUDA_ERROR(cudaStreamSynchronize(stream_));
 
   return new_end - out_ptr;
 }

@@ -112,8 +112,8 @@ void PTv3TRT::allocateMessages()
 PTv3TRT::~PTv3TRT()
 {
   if (stream_) {
-    cudaStreamSynchronize(stream_);
-    cudaStreamDestroy(stream_);
+    CHECK_CUDA_ERROR(cudaStreamSynchronize(stream_));
+    CHECK_CUDA_ERROR(cudaStreamDestroy(stream_));
   }
 }
 
@@ -291,8 +291,6 @@ bool PTv3TRT::preProcess(const std::shared_ptr<const cuda_blackboard::CudaPointC
   num_voxels_ = pre_ptr_->generateFeatures(
     reinterpret_cast<InputPointType *>(msg_ptr->data.get()), num_points, feat_d_.get(),
     grid_coord_d_.get(), serialized_code_d_.get());
-
-  CHECK_CUDA_ERROR(cudaStreamSynchronize(stream_));
 
   if (num_voxels_ < config_.min_num_voxels_) {
     RCLCPP_ERROR_STREAM(
