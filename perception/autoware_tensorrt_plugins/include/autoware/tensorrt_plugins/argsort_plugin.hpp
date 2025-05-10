@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef AUTOWARE__TENSORRT_PLUGINS__CUSTOM_ARGSORT_PLUGIN_HPP_
-#define AUTOWARE__TENSORRT_PLUGINS__CUSTOM_ARGSORT_PLUGIN_HPP_
+#ifndef AUTOWARE__TENSORRT_PLUGINS__ARGSORT_PLUGIN_HPP_
+#define AUTOWARE__TENSORRT_PLUGINS__ARGSORT_PLUGIN_HPP_
 
 #include <NvInferRuntime.h>
 #include <NvInferRuntimePlugin.h>
@@ -24,26 +24,22 @@
 #include <string>
 #include <vector>
 
-constexpr char const * const kCUSTOM_ARGSORT_PLUGIN_NAME{"CustomArgsort"};  // cSpell:ignore Indice
-constexpr char const * const kCUSTOM_ARGSORT_PLUGIN_VERSION{"1"};
-constexpr char const * const kCUSTOM_ARGSORT_PLUGIN_NAMESPACE{""};
+constexpr char const * const kARGSORT_PLUGIN_NAME{"Argsort"};
+constexpr char const * const kARGSORT_PLUGIN_VERSION{"1"};
+constexpr char const * const kARGSORT_PLUGIN_NAMESPACE{""};
 
 namespace nvinfer1::plugin
 {
 
-struct CustomArgsortParameters
-{
-};
-
-class CustomArgsortPlugin : public IPluginV3,
-                            public IPluginV3OneCore,
-                            public IPluginV3OneBuild,
-                            public IPluginV3OneRuntime
+class ArgsortPlugin : public IPluginV3,
+                      public IPluginV3OneCore,
+                      public IPluginV3OneBuild,
+                      public IPluginV3OneRuntime
 {
 public:
-  CustomArgsortPlugin(const std::string & name, CustomArgsortParameters const & params);
+  explicit ArgsortPlugin(const std::string & name);
 
-  ~CustomArgsortPlugin() override = default;
+  ~ArgsortPlugin() override = default;
 
   // IPluginV3 Methods
 
@@ -103,7 +99,6 @@ private:
   void initFieldsToSerialize();
 
   std::string layer_name_;
-  CustomArgsortParameters params_;  // TODO(knzo25): delete this
   std::size_t argsort_workspace_size_{0};
   std::size_t max_num_elements_{0};
   std::vector<nvinfer1::PluginField> data_to_serialize_;
@@ -112,4 +107,4 @@ private:
 
 }  // namespace nvinfer1::plugin
 
-#endif  // AUTOWARE__TENSORRT_PLUGINS__CUSTOM_ARGSORT_PLUGIN_HPP_
+#endif  // AUTOWARE__TENSORRT_PLUGINS__ARGSORT_PLUGIN_HPP_

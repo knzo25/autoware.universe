@@ -24,7 +24,6 @@
 namespace nvinfer1::plugin
 {
 
-// Plugin factory class.
 class IndiceConvPluginCreator : public nvinfer1::IPluginCreatorV3One
 {
 public:

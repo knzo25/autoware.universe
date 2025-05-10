@@ -18,14 +18,9 @@
 #include <NvInferRuntime.h>
 #include <NvInferRuntimePlugin.h>
 #include <cuda_runtime.h>
-#include <spconvlib/spconv/csrc/sparse/convops/gemmops/GemmTunerSimple.h>  // cSpell:ignore spconvlib
-#include <spconvlib/spconv/csrc/sparse/convops/spops/ConvGemmOps.h>
 
-#include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <string>
-#include <tuple>
 #include <vector>
 
 constexpr char const * const kSEGMENT_CSR_PLUGIN_NAME{"SegmentCSR"};

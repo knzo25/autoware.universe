@@ -113,11 +113,8 @@ if(TRT_AVAIL AND CUDA_AVAIL AND CUDNN_AVAIL AND SPCONV_AVAIL)
   )
 
   add_library(${PROJECT_NAME} SHARED
-    src/plugin_utils.cpp
-    src/custom_argsort_plugin.cpp
-    src/custom_argsort_plugin_creator.cpp
-    src/custom_unique_plugin.cpp
-    src/custom_unique_plugin_creator.cpp
+    src/argsort_plugin.cpp
+    src/argsort_plugin_creator.cpp
     src/quick_cumsum_cuda_plugin.cpp
     src/quick_cumsum_cuda_plugin_creator.cpp
     src/get_indices_pairs_implicit_gemm_plugin_creator.cpp
@@ -130,7 +127,10 @@ if(TRT_AVAIL AND CUDA_AVAIL AND CUDNN_AVAIL AND SPCONV_AVAIL)
     src/indice_conv_plugin.cpp
     src/segment_csr_plugin_creator.cpp
     src/segment_csr_plugin.cpp
+    src/unique_plugin.cpp
+    src/unique_plugin_creator.cpp
     src/plugin_registration.cpp
+    src/plugin_utils.cpp
   )
 
   target_compile_definitions(${PROJECT_NAME} PRIVATE _GLIBCXX_USE_CXX11_ABI=1)

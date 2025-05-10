@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef AUTOWARE__TENSORRT_PLUGINS__CUSTOM_ARGSORT_PLUGIN_CREATOR_HPP_
-#define AUTOWARE__TENSORRT_PLUGINS__CUSTOM_ARGSORT_PLUGIN_CREATOR_HPP_
+#ifndef AUTOWARE__TENSORRT_PLUGINS__UNIQUE_PLUGIN_CREATOR_HPP_
+#define AUTOWARE__TENSORRT_PLUGINS__UNIQUE_PLUGIN_CREATOR_HPP_
 
-#include "autoware/tensorrt_plugins/custom_argsort_plugin.hpp"
+#include "autoware/tensorrt_plugins/unique_plugin.hpp"
 
 #include <NvInferRuntime.h>
 
@@ -25,21 +25,18 @@ namespace nvinfer1::plugin
 {
 
 // Plugin factory class.
-class CustomArgsortPluginCreator : public nvinfer1::IPluginCreatorV3One
+class UniquePluginCreator : public nvinfer1::IPluginCreatorV3One
 {
 public:
-  CustomArgsortPluginCreator();
+  UniquePluginCreator();
 
-  ~CustomArgsortPluginCreator() override = default;
+  ~UniquePluginCreator() override = default;
 
-  char const * getPluginNamespace() const noexcept override
-  {
-    return kCUSTOM_ARGSORT_PLUGIN_NAMESPACE;
-  }
+  char const * getPluginNamespace() const noexcept override { return kUNIQUE_PLUGIN_NAMESPACE; }
 
-  char const * getPluginName() const noexcept override { return kCUSTOM_ARGSORT_PLUGIN_NAME; }
+  char const * getPluginName() const noexcept override { return kUNIQUE_PLUGIN_NAME; }
 
-  char const * getPluginVersion() const noexcept override { return kCUSTOM_ARGSORT_PLUGIN_VERSION; }
+  char const * getPluginVersion() const noexcept override { return kUNIQUE_PLUGIN_VERSION; }
 
   nvinfer1::PluginFieldCollection const * getFieldNames() noexcept override;
 
@@ -53,4 +50,4 @@ private:
 
 }  // namespace nvinfer1::plugin
 
-#endif  // AUTOWARE__TENSORRT_PLUGINS__CUSTOM_ARGSORT_PLUGIN_CREATOR_HPP_
+#endif  // AUTOWARE__TENSORRT_PLUGINS__UNIQUE_PLUGIN_CREATOR_HPP_

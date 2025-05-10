@@ -20,18 +20,13 @@
 
 #include <NvInferRuntime.h>
 #include <NvInferRuntimePlugin.h>
+#include <cuda_fp16.h>
+#include <cuda_runtime.h>
 
-#include <algorithm>  // TODO(knzo25): delete this
-#include <cstddef>
 #include <cstdint>
-#include <cstdlib>
-#include <cstring>
 #include <exception>
-#include <iostream>  // TODO(knzo25): delete this
-#include <memory>
 #include <string>
-#include <tuple>  // TODO(knzo25): delete this
-#include <unordered_map>
+#include <tuple>
 #include <vector>
 namespace nvinfer1::plugin
 {
@@ -39,8 +34,6 @@ namespace nvinfer1::plugin
 SegmentCSRPlugin::SegmentCSRPlugin(const std::string & name, const std::string & reduce)
 : layer_name_{name}, reduce_{reduce}
 {
-  /* std::cout << "SegmentCSRPlugin::SegmentCSRPlugin | name: " << name << std::endl;
-  std::cout << "SegmentCSRPlugin::SegmentCSRPlugin | reduce: " << reduce_ << std::endl; */
   initFieldsToSerialize();
 }
 
@@ -173,7 +166,6 @@ std::int32_t SegmentCSRPlugin::getOutputShapes(
   PLUGIN_ASSERT(inputs[1].nbDims == 1);
 
   outputs[0].nbDims = 2;
-  // outputs[0].d[0] = inputs[1].d[0] - 1;
   outputs[0].d[0] =
     expr_builder.operation(DimensionOperation::kSUB, *inputs[1].d[0], *expr_builder.constant(1));
   outputs[0].d[1] = inputs[0].d[1];
@@ -181,58 +173,11 @@ std::int32_t SegmentCSRPlugin::getOutputShapes(
   return 0;
 }
 
-void _write_vector_to_text_file(
-  std::string const & file_name, const std::vector<std::int64_t> & data)
-{
-  std::ofstream file(file_name);
-  if (file.is_open()) {
-    for (const auto & value : data) {
-      file << value << "\n";
-    }
-    file.close();
-  } else {
-    std::cerr << "Unable to open file: " << file_name << std::endl;
-  }
-}
-
-void _write_vector_to_text_file(std::string const & file_name, const std::vector<float> & data)
-{
-  std::ofstream file(file_name);
-  if (file.is_open()) {
-    for (const auto & value : data) {
-      file << value << "\n";
-    }
-    file.close();
-  } else {
-    std::cerr << "Unable to open file: " << file_name << std::endl;
-  }
-}
-
 std::int32_t SegmentCSRPlugin::enqueue(
   PluginTensorDesc const * input_desc, [[maybe_unused]] PluginTensorDesc const * output_desc,
   void const * const * inputs, void * const * outputs, [[maybe_unused]] void * workspace,
   cudaStream_t stream) noexcept
 {
-  /* std::cout << "SegmentCSRPlugin::enqueue::start" << std::endl;
-  std::cout << "layer_name_: " << layer_name_ << std::endl;
-
-  std::string layer_name2 = layer_name_;
-  std::replace(layer_name2.begin(), layer_name2.end(), '/', '_');
-  std::transform(layer_name2.begin(), layer_name2.end(), layer_name2.begin(), [](unsigned char c) {
-    return std::tolower(c);
-  });
-  std::cout << "layer_name2: " << layer_name2 << std::endl;
-
-  std::cout << "input_desc[0]: nbDims: " << input_desc[0].dims.nbDims << " ["
-            << input_desc[0].dims.d[0] << ", " << input_desc[0].dims.d[1] << "]" << std::endl;
-  std::cout << "input_desc[1]: nbDims: " << input_desc[1].dims.nbDims << " ["
-            << input_desc[1].dims.d[0] << "]" << std::endl;
-
-  std::cout << "output_desc[0]: nbDims: " << output_desc[0].dims.nbDims << " ["
-            << output_desc[0].dims.d[0] << ", " << output_desc[0].dims.d[1] << "]" << std::endl; */
-
-  // auto num_output_bytes = output_desc[0].dims.d[0] * output_desc[0].dims.d[1] * sizeof(float);
-
   std::vector<int32_t> src_size{
     static_cast<int32_t>(input_desc[0].dims.d[0]), static_cast<int32_t>(input_desc[0].dims.d[1])};
   std::vector<int32_t> indptr_size{static_cast<int32_t>(input_desc[1].dims.d[0])};
@@ -261,71 +206,7 @@ std::int32_t SegmentCSRPlugin::enqueue(
     });
   }
 
-  /* std::cout << "segment_csr_launch result: " << result << std::endl;
-
-  // Copy the inputs to host to check the result.
-  std::vector<float> input_data(input_desc[0].dims.d[0] * input_desc[0].dims.d[1]);
-  cudaMemcpyAsync(
-    input_data.data(), inputs[0], input_desc[0].dims.d[0] * input_desc[0].dims.d[1] * sizeof(float),
-    cudaMemcpyDeviceToHost, stream);
-  cudaStreamSynchronize(stream);
-  std::cout << "input_data: ";
-  // Print the first 6 feature of the first 20 points.
-  for (std::int32_t i = 0; i < 20; ++i) {
-    std::cout << "[";
-    for (std::int32_t j = 0; j < 6; ++j) {
-      std::cout << input_data[i * input_desc[0].dims.d[1] + j] << ", ";
-    }
-    std::cout << "]" << std::endl;
-  }
-  // Copy the indptr to host to check the result.
-  std::vector<int64_t> indptr_data(input_desc[1].dims.d[0]);
-  cudaMemcpyAsync(
-    indptr_data.data(), inputs[1], input_desc[1].dims.d[0] * sizeof(int64_t),
-    cudaMemcpyDeviceToHost, stream);
-  cudaStreamSynchronize(stream);
-  std::cout << "indptr_data: ";
-  // Print the first 6 feature of the first 20 points.
-  for (std::int32_t i = 0; i < 20; ++i) {
-    std::cout << indptr_data[i] << ", ";
-  }
-  std::cout << std::endl;
-
-  // Copy the output to host to check the result.
-  std::vector<float> output_data(output_desc[0].dims.d[0] * output_desc[0].dims.d[1]);
-  cudaMemcpyAsync(output_data.data(), outputs[0], num_output_bytes, cudaMemcpyDeviceToHost, stream);
-  cudaStreamSynchronize(stream);
-  std::cout << "output_data: \n";
-  // Print the first 6 feature of the first 20 points.
-  for (std::int32_t i = 0; i < 20; ++i) {
-    std::cout << "[";
-    for (std::int32_t j = 0; j < 6; ++j) {
-      std::cout << output_data[i * output_desc[0].dims.d[1] + j] << ", ";
-    }
-    std::cout << "]" << std::endl;
-  } */
-
-  /* _write_vector_to_text_file(layer_name2 + "_input_data.txt", input_data);
-  _write_vector_to_text_file(layer_name2 + "_indptr_data.txt", indptr_data);
-  _write_vector_to_text_file(layer_name2 + "_output_data.txt", output_data); */
-
-  (void)input_desc;
-  (void)output_desc;
-  (void)inputs;
-  (void)outputs;
-  (void)workspace;
-  (void)stream;
-  /* std::cout << "Name: " << layer_name_ << std::endl;
-  std::cout << "Reduction type: " << reduce_ << " size=" << reduce_.size() << std::endl;
-
-  // Check the contents of the map
-  for (const auto & pair : reduce2REDUCE) {
-    std::cout << "Key: " << pair.first << ", Value: " << pair.second << std::endl;
-  }
-
-  std::cout << "Enum type: " << reduce2REDUCE.at(reduce_) << std::endl; */
-  /* std::cout << "SegmentCSRPlugin::enqueue::end" << std::endl; */
-  return 0;
+  return result;
 }
 
 std::int32_t SegmentCSRPlugin::onShapeChange(

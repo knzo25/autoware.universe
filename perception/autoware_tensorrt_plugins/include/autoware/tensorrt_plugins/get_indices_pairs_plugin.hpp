@@ -36,7 +36,6 @@ struct GetIndicesPairsParameters
 {
   std::int32_t batch_size;
   std::int32_t algo;
-  // std::int32_t is_train;
   std::vector<std::int32_t> dilation;
   std::vector<std::int32_t> ksize;
   std::vector<std::int32_t> out_padding;

@@ -25,20 +25,11 @@
 #include <spconvlib/spconv/csrc/sparse/convops/spops/ConvGemmOps.h>
 #include <spconvlib/spconv/csrc/sparse/inference/InferenceOps.h>
 
-#include <cstddef>
 #include <cstdint>
-#include <cstdlib>
-#include <cstring>
 #include <exception>
 #include <functional>
 #include <string>
-#include <tuple>
 #include <vector>
-
-// NOTE(knzo25): delete these
-#include <chrono>
-#include <iostream>
-#include <thread>
 
 namespace nvinfer1::plugin
 {
@@ -55,7 +46,6 @@ void GetIndicesPairsPlugin::initFieldsToSerialize()
   data_to_serialize_.clear();
   data_to_serialize_.emplace_back("batch_size", &params_.batch_size, PluginFieldType::kINT32, 1);
   data_to_serialize_.emplace_back("algo", &params_.algo, PluginFieldType::kINT32, 1);
-  // data_to_serialize_.emplace_back("is_train", &params_.is_train, PluginFieldType::kINT32, 1);
   data_to_serialize_.emplace_back(
     "dilation_dims", &params_.dilation_dims, PluginFieldType::kDIMS, 1);
   data_to_serialize_.emplace_back("ksize_dims", &params_.ksize_dims, PluginFieldType::kDIMS, 1);
@@ -200,7 +190,7 @@ std::int32_t GetIndicesPairsPlugin::getOutputShapes(
     kernel_volume *= params_.ksize[i];
   }
 
-  PLUGIN_ASSERT(params_.subm == 1);  // NOTE(knzo25): we only support subm for now
+  PLUGIN_ASSERT(params_.subm == 1);  // NOTE(knzo25): we have only tested subm
 
   if (params_.subm) {
     outputs[0] = inputs[0];
@@ -213,9 +203,6 @@ std::int32_t GetIndicesPairsPlugin::getOutputShapes(
 
     outputs[2].nbDims = 1;
     outputs[2].d[0] = expr_builder.constant(kernel_volume);
-    /* std::cout << "GetIndicesPairsPlugin::getOutputShapes kernel_volume: " << kernel_volume
-              << std::endl; */
-
   } else {
     auto opt_value = expr_builder.operation(
       DimensionOperation::kCEIL_DIV, *inputs[0].d[0], *expr_builder.constant(2));
@@ -235,7 +222,6 @@ std::int32_t GetIndicesPairsPlugin::getOutputShapes(
     outputs[2].d[0] = expr_builder.constant(kernel_volume);
   }
 
-  // num_activate_out
   outputs[3].nbDims = 0;
 
   return 0;
@@ -246,15 +232,10 @@ std::int32_t GetIndicesPairsPlugin::enqueue(
   void const * const * inputs, void * const * outputs, [[maybe_unused]] void * workspace,
   cudaStream_t stream) noexcept
 {
-  /* std::cout << "GetIndicesPairsPlugin::enqueue::start" << std::endl; */
-
   using SpconvOps = spconvlib::spconv::csrc::sparse::all::SpconvOps;
   using StaticAllocator = spconvlib::spconv::csrc::sparse::alloc::StaticAllocator;
 
   const bool is_subm = params_.subm;
-  // const bool direct_table = true;
-  // const bool use_direct_table = direct_table && !is_subm;
-  // const int static_num_act_in = out_indices_num_limit_;
   const int num_act_in = input_desc[0].dims.d[0];
 
   std::vector<int32_t> ksize(params_.ksize.begin(), params_.ksize.end());
@@ -275,25 +256,13 @@ std::int32_t GetIndicesPairsPlugin::enqueue(
   int kernel_volume =
     std::accumulate(params_.ksize.begin(), params_.ksize.end(), 1, std::multiplies<int>());
 
-  // auto max_act_out_theory = SpconvOps::get_handcrafted_max_act_out(
-  //   input_desc[0].dims.d[0], ksize, stride, padding, dilation);
-
   auto ws_tensors = SpconvOps::get_indice_gen_tensors_from_workspace(
     reinterpret_cast<std::uint8_t *>(workspace), kernel_volume, out_indices_num_limit_,
     out_indices_num_limit_, 0, is_subm, use_int64_hash_k, false);
 
-  // start
   tv::Tensor pair = tv::from_blob(outputs[1], {2, kernel_volume, num_act_in}, tv::int32, 0);
   tv::Tensor indices_kernel_num = tv::from_blob(outputs[2], {kernel_volume}, tv::int32, 0);
 
-  /* tv::Context ctx;
-  ctx.set_cuda_stream_int(reinterpret_cast<std::uintptr_t>(stream)); */
-
-  /* std::cout << "kernel_volume: " << kernel_volume << std::endl;
-  std::cout << "num_act_in: " << num_act_in << std::endl;
-  std::cout << indices_kernel_num.numel() << std::endl; */
-
-  // indices_kernel_num = tv::zeros({kernel_volume}, tv::int32, 0);
   cudaMemsetAsync(indices_kernel_num.data_ptr(), 0, kernel_volume * sizeof(std::int32_t), stream);
 
   tv::Tensor out_inds =
@@ -324,39 +293,7 @@ std::int32_t GetIndicesPairsPlugin::enqueue(
   cudaError_t const status = cudaMemcpyAsync(
     num_act_out_data, &num_act_out_real, sizeof(std::int32_t), cudaMemcpyHostToDevice, stream);
 
-  /* std::vector<int32_t> pairs_host(
-    num_act_in * kernel_volume * 2);
-  std::vector<int32_t> pairs_num_host(kernel_volume);
-  cudaMemcpyAsync(
-    pairs_host.data(), outputs[1], num_act_in * kernel_volume * 2 * sizeof(int32_t),
-    cudaMemcpyDeviceToHost, stream);
-  cudaMemcpyAsync(
-    pairs_num_host.data(), outputs[2], kernel_volume * sizeof(int32_t),
-    cudaMemcpyDeviceToHost, stream);
-  cudaStreamSynchronize(stream); */
-
-  /* std::cout << "input_indices: \n" << input_indices.cpu().slice_first_axis(0,20) << std::endl; */
-  // std::cout << "pair: \n" << pair.cpu() << std::endl;
-  /* std::cout << "indices_kernel_num: \n" << indices_kernel_num.cpu() << std::endl;
-  std::cout << "out_inds: \n" << out_inds.cpu().slice_first_axis(0,20) << std::endl; */
-
-  /*  std::cout << "pairs_host: \n";
-   // print all the pairs
-   for (std::int32_t i = 0; i < std::min<std::int32_t>(num_act_in, 20); ++i) {
-     std::cout << pairs_host[i] << ", ";
-   }
-   std::cout << std::endl;
-
-   std::cout << "pairs_num_host: \n";
-   // print all the pairs_num
-   for (std::int32_t i = 0; i < std::min<std::int32_t>(kernel_volume, 20); ++i) {
-     std::cout << pairs_num_host[i] << ", ";
-   }
-   std::cout << std::endl;
-
-   std::cout << "num_act_out_real: " << num_act_out_real << std::endl; */
-
-  /* std::cout << "GetIndicesPairsPlugin::enqueue end" << std::endl; */
+  cudaStreamSynchronize(stream);
 
   return status;
 }
@@ -387,8 +324,6 @@ std::size_t GetIndicesPairsPlugin::getWorkspaceSize(
   using SpconvOps = spconvlib::spconv::csrc::sparse::all::SpconvOps;
 
   bool is_subm = params_.subm;
-  // const bool direct_table = true;
-  // const bool use_direct_table = direct_table && !is_subm;
 
   std::vector<int> ksize(params_.ksize.begin(), params_.ksize.end());
   std::vector<int> stride(params_.stride.begin(), params_.stride.end());
@@ -407,7 +342,6 @@ std::size_t GetIndicesPairsPlugin::getWorkspaceSize(
   int kernel_volume =
     std::accumulate(params_.ksize.begin(), params_.ksize.end(), 1, std::multiplies<int>());
 
-  // query workspace size.
   int workspace_size = SpconvOps::get_indice_gen_workspace_size(
     kernel_volume, out_indices_num_limit_, out_indices_num_limit_, 0, is_subm, use_int64_hash_k,
     false);

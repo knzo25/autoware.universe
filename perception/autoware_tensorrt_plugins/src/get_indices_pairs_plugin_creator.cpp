@@ -23,7 +23,6 @@
 #include <cstring>
 #include <exception>
 #include <iostream>
-#include <mutex>
 #include <sstream>
 #include <string>
 
@@ -38,7 +37,6 @@ GetIndicesPairsPluginCreator::GetIndicesPairsPluginCreator()
   plugin_attributes_.emplace_back("algo", nullptr, PluginFieldType::kINT32, 1);
   plugin_attributes_.emplace_back("batch_size", nullptr, PluginFieldType::kINT32, 1);
   plugin_attributes_.emplace_back("dilation", nullptr, PluginFieldType::kINT32, 3);
-  // plugin_attributes_.emplace_back("is_train", nullptr, PluginFieldType::kINT32, 1);
   plugin_attributes_.emplace_back("ksize", nullptr, PluginFieldType::kINT32, 3);
   plugin_attributes_.emplace_back("out_padding", nullptr, PluginFieldType::kINT32, 3);
   plugin_attributes_.emplace_back("padding", nullptr, PluginFieldType::kINT32, 3);
@@ -84,10 +82,6 @@ IPluginV3 * GetIndicesPairsPluginCreator::createPlugin(
           PLUGIN_VALIDATE(type == nvinfer1::PluginFieldType::kINT32);
           parameters.algo = static_cast<std::int32_t const *>(fields[i].data)[0];
         }
-        /* if (attr_name == "is_train") {
-          PLUGIN_VALIDATE(type == nvinfer1::PluginFieldType::kINT32);
-          parameters.is_train = static_cast<std::int32_t const *>(fields[i].data)[0];
-        } */
         if (attr_name == "dilation") {
           PLUGIN_VALIDATE(type == nvinfer1::PluginFieldType::kINT32);
           std::int32_t const * const dilation_data{
@@ -213,10 +207,6 @@ IPluginV3 * GetIndicesPairsPluginCreator::createPlugin(
       ss.str("");
       ss << "algo: " << parameters.algo;
       logDebug(ss.str().c_str());
-
-      // ss.str("");
-      // ss << "is_train: " << parameters.is_train;
-      // logDebug(ss.str().c_str());
 
       ss.str("");
       ss << "dilation: ";

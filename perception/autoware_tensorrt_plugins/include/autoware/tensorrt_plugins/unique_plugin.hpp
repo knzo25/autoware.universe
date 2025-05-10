@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef AUTOWARE__TENSORRT_PLUGINS__CUSTOM_UNIQUE_PLUGIN_HPP_
-#define AUTOWARE__TENSORRT_PLUGINS__CUSTOM_UNIQUE_PLUGIN_HPP_
+#ifndef AUTOWARE__TENSORRT_PLUGINS__UNIQUE_PLUGIN_HPP_
+#define AUTOWARE__TENSORRT_PLUGINS__UNIQUE_PLUGIN_HPP_
 
 #include <NvInferRuntime.h>
 #include <NvInferRuntimePlugin.h>
@@ -24,26 +24,22 @@
 #include <string>
 #include <vector>
 
-constexpr char const * const kCUSTOM_UNIQUE_PLUGIN_NAME{"CustomUnique"};  // cSpell:ignore Indice
-constexpr char const * const kCUSTOM_UNIQUE_PLUGIN_VERSION{"1"};
-constexpr char const * const kCUSTOM_UNIQUE_PLUGIN_NAMESPACE{""};
+constexpr char const * const kUNIQUE_PLUGIN_NAME{"CustomUnique"};
+constexpr char const * const kUNIQUE_PLUGIN_VERSION{"1"};
+constexpr char const * const kUNIQUE_PLUGIN_NAMESPACE{""};
 
 namespace nvinfer1::plugin
 {
 
-struct CustomUniqueParameters
-{
-};
-
-class CustomUniquePlugin : public IPluginV3,
-                           public IPluginV3OneCore,
-                           public IPluginV3OneBuild,
-                           public IPluginV3OneRuntime
+class UniquePlugin : public IPluginV3,
+                     public IPluginV3OneCore,
+                     public IPluginV3OneBuild,
+                     public IPluginV3OneRuntime
 {
 public:
-  CustomUniquePlugin(const std::string & name, CustomUniqueParameters const & params);
+  explicit UniquePlugin(const std::string & name);
 
-  ~CustomUniquePlugin() override = default;
+  ~UniquePlugin() override = default;
 
   // IPluginV3 Methods
 
@@ -102,11 +98,7 @@ public:
 private:
   void initFieldsToSerialize();
 
-  // upper bound of number of output indices. needed to bound memory usage.
-  // static constexpr int out_indices_num_limit_{256000};
-
   std::string layer_name_;
-  CustomUniqueParameters params_;
   std::size_t workspace_size_{0};
   std::size_t max_num_elements_{0};
   std::vector<nvinfer1::PluginField> data_to_serialize_;
@@ -115,4 +107,4 @@ private:
 
 }  // namespace nvinfer1::plugin
 
-#endif  // AUTOWARE__TENSORRT_PLUGINS__CUSTOM_UNIQUE_PLUGIN_HPP_
+#endif  // AUTOWARE__TENSORRT_PLUGINS__UNIQUE_PLUGIN_HPP_
