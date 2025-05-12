@@ -184,7 +184,7 @@ std::size_t ArgsortPlugin::getWorkspaceSize(
   [[maybe_unused]] DynamicPluginTensorDesc const * outputs,
   [[maybe_unused]] std::int32_t num_outputs) const noexcept
 {
-  int64_t max_num_elements = inputs[0].max.d[0];
+  std::int64_t max_num_elements = inputs[0].max.d[0];
   return get_argsort_workspace_size(max_num_elements) +
          sizeof(std::int64_t) * 2 * (max_num_elements + 1);
 }

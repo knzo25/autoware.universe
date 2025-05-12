@@ -25,7 +25,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <iostream>  // TODO(knzo25): remove this include
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -233,31 +232,19 @@ bool PTv3TRT::segment(
   bool should_publish_segmented_pointcloud, bool should_publish_ground_segmented_pointcloud,
   bool should_publish_probs_pointcloud, std::unordered_map<std::string, double> & proc_timing)
 {
-  auto t0_preprocess = std::chrono::high_resolution_clock::now();
-
   stop_watch_ptr_->toc("processing/inner", true);
   if (!preProcess(msg_ptr)) {
     RCLCPP_ERROR(rclcpp::get_logger("ptv3"), "Pre-process failed. Skipping detection.");
     return false;
   }
 
-  auto t1_preprocess = std::chrono::high_resolution_clock::now();
-  auto t_preprocess =
-    std::chrono::duration_cast<std::chrono::nanoseconds>(t1_preprocess - t0_preprocess).count();
-
   proc_timing.emplace(
     "debug/processing_time/preprocess_ms", stop_watch_ptr_->toc("processing/inner", true));
-
-  auto t0_inference = std::chrono::high_resolution_clock::now();
 
   if (!inference()) {
     RCLCPP_ERROR(rclcpp::get_logger("ptv3"), "Inference failed. Skipping detection.");
     return false;
   }
-
-  auto t1_inference = std::chrono::high_resolution_clock::now();
-  auto t_inference =
-    std::chrono::duration_cast<std::chrono::nanoseconds>(t1_inference - t0_inference).count();
 
   proc_timing.emplace(
     "debug/processing_time/inference_ms", stop_watch_ptr_->toc("processing/inner", true));
@@ -270,9 +257,6 @@ bool PTv3TRT::segment(
   }
   proc_timing.emplace(
     "debug/processing_time/postprocess_ms", stop_watch_ptr_->toc("processing/inner", true));
-
-  std::cout << "Preprocess time: " << t_preprocess / 1e6 << " ms" << std::endl;
-  std::cout << "Inference time: " << t_inference / 1e6 << " ms" << std::endl << std::flush;
 
   return true;
 }

@@ -182,13 +182,14 @@ std::int32_t SegmentCSRPlugin::enqueue(
     static_cast<int32_t>(input_desc[0].dims.d[0]), static_cast<int32_t>(input_desc[0].dims.d[1])};
   std::vector<int32_t> indptr_size{static_cast<int32_t>(input_desc[1].dims.d[0])};
 
-  int32_t result;
+  std::int32_t result = 0;
 
   if (input_desc[0].type == nvinfer1::DataType::kFLOAT) {
     const float * src_ptr = reinterpret_cast<const float *>(inputs[0]);
-    const int64_t * indptr_ptr = reinterpret_cast<const int64_t *>(inputs[1]);
+    const std::int64_t * indptr_ptr = reinterpret_cast<const std::int64_t *>(inputs[1]);
 
-    std::tuple<float *, int64_t *> out = std::make_tuple(static_cast<float *>(outputs[0]), nullptr);
+    std::tuple<float *, std::int64_t *> out =
+      std::make_tuple(static_cast<float *>(outputs[0]), nullptr);
 
     AT_DISPATCH_REDUCTION_TYPES(reduce_, [&] {
       result =
@@ -196,9 +197,10 @@ std::int32_t SegmentCSRPlugin::enqueue(
     });
   } else if (input_desc[0].type == nvinfer1::DataType::kHALF) {
     const half * src_ptr = reinterpret_cast<const half *>(inputs[0]);
-    const int64_t * indptr_ptr = reinterpret_cast<const int64_t *>(inputs[1]);
+    const std::int64_t * indptr_ptr = reinterpret_cast<const std::int64_t *>(inputs[1]);
 
-    std::tuple<half *, int64_t *> out = std::make_tuple(static_cast<half *>(outputs[0]), nullptr);
+    std::tuple<half *, std::int64_t *> out =
+      std::make_tuple(static_cast<half *>(outputs[0]), nullptr);
 
     AT_DISPATCH_REDUCTION_TYPES(reduce_, [&] {
       result =

@@ -27,6 +27,7 @@
 #include <thrust/sequence.h>
 #include <thrust/unique.h>
 
+#include <limits>
 #include <string>
 
 namespace autoware::ptv3
@@ -263,12 +264,16 @@ std::size_t PreprocessCuda::generateFeatures(
     return make_float4(fmaxf(a.x, b.x), fmaxf(a.y, b.y), fmaxf(a.z, b.z), fmaxf(a.w, b.w));
   };
 
-  float4 min_value = make_float4(FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX);
+  float4 min_value = make_float4(
+    std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
+    std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
   min_value = thrust::reduce(
     policy, reinterpret_cast<float4 *>(cropped_points_d_.get()),
     reinterpret_cast<float4 *>(cropped_points_d_.get()) + num_cropped_points, min_value, min_op);
 
-  float4 max_value = make_float4(-FLT_MAX, -FLT_MAX, -FLT_MAX, -FLT_MAX);
+  float4 max_value = make_float4(
+    -std::numeric_limits<float>::max(), -std::numeric_limits<float>::max(),
+    -std::numeric_limits<float>::max(), -std::numeric_limits<float>::max());
   max_value = thrust::reduce(
     policy, reinterpret_cast<float4 *>(cropped_points_d_.get()),
     reinterpret_cast<float4 *>(cropped_points_d_.get()) + num_cropped_points, max_value, max_op);

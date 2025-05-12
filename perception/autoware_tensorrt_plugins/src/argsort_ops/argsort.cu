@@ -39,7 +39,7 @@ cudaError_t argsort(
 
 std::size_t get_argsort_workspace_size(std::size_t num_elements)
 {
-  size_t temp_size = 0;
+  std::size_t temp_size = 0;
 
   std::int64_t * int64_nullptr = nullptr;
 
